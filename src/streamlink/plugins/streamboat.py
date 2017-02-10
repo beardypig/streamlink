@@ -20,7 +20,7 @@ class StreamBoat(Plugin):
         text = res.text
         cdn = _RE_CDN.search(text).group(1)
         playlist_url = _RE_PLAYLIST.search(text).group(1)
-        url = 'http://{}{}'.format(cdn, playlist_url)
+        url = 'http://{0}{1}'.format(cdn, playlist_url)
         return dict(source=HLSStream(self.session, url))
 
 

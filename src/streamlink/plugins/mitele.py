@@ -124,10 +124,10 @@ class Mitele(Plugin):
         channel = self.url_re.match(self.url).group(1)
 
         key, sig = self.config["general_configuration"]["api_configuration"]["ooyala_discovery"]["api_key"].split(".")
-        self.logger.debug("Got api key: {}.{}", key, sig)
+        self.logger.debug("Got api key: {0}.{1}", key, sig)
 
         channel_id = self.get_channel_id(channel)
-        self.logger.debug("Got channel ID {} for channel {}", channel_id, channel)
+        self.logger.debug("Got channel ID {0} for channel {1}", channel_id, channel)
 
         data = self.get_stream_info(key, channel_id)
 
@@ -140,7 +140,7 @@ class Mitele(Plugin):
                         yield s
 
         else:
-            self.logger.error("Cannot load streams: {}", stream_info["message"])
+            self.logger.error("Cannot load streams: {0}", stream_info["message"])
 
 
 __plugin__ = Mitele

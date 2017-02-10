@@ -48,7 +48,7 @@ class Dogus(Plugin):
 
     def _get_star_streams(self, desktop_url, mobile_url, token=""):
         if token:
-            self.logger.debug("Opening stream with token: {}", token)
+            self.logger.debug("Opening stream with token: {0}", token)
 
         if mobile_url:
             for _, s in HLSStream.parse_variant_playlist(self.session,

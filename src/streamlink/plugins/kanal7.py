@@ -23,7 +23,7 @@ class Kanal7(Plugin):
         iframe = self.iframe_re.search(res.text)
         iframe_url = iframe and iframe.group(1)
         if iframe_url:
-            self.logger.debug("Found iframe: {}", iframe_url)
+            self.logger.debug("Found iframe: {0}", iframe_url)
             ires = http.get(iframe_url)
             stream_m = self.stream_re.search(ires.text)
             stream_url = stream_m and stream_m.group(1)

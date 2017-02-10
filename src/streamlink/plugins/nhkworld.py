@@ -6,7 +6,7 @@ from streamlink.plugin import Plugin
 from streamlink.plugin.api import http, validate
 from streamlink.stream import HLSStream
 
-API_URL = "http://{}.nhk.or.jp/nhkworld/app/tv/hlslive_web.xml"
+API_URL = "http://{0}.nhk.or.jp/nhkworld/app/tv/hlslive_web.xml"
 
 _url_re = re.compile(r"http(?:s)?://(?:(\w+)\.)?nhk.or.jp/nhkworld")
 _schema = validate.Schema(

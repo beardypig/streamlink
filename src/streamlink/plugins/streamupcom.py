@@ -20,7 +20,7 @@ class StreamupCom(Plugin):
             return
         match = _hls_manifest_re.search(res.text)
         url = match.group(1)
-        hls_url = "http://video-cdn.streamup.com{}".format(url)
+        hls_url = "http://video-cdn.streamup.com{0}".format(url)
         return HLSStream.parse_variant_playlist(self.session, hls_url)
 
 

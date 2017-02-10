@@ -10,8 +10,8 @@ from streamlink.plugin.api import http, validate
 from streamlink.stream import HDSStream, HLSStream, HTTPStream, RTMPStream
 
 SWF_URL = "http://www.arte.tv/player/v2/jwplayer6/mediaplayer.6.6.swf"
-JSON_VOD_URL = "https://api.arte.tv/api/player/v1/config/{}/{}"
-JSON_LIVE_URL = "https://api.arte.tv/api/player/v1/livestream/{}"
+JSON_VOD_URL = "https://api.arte.tv/api/player/v1/config/{0}/{1}"
+JSON_LIVE_URL = "https://api.arte.tv/api/player/v1/livestream/{0}"
 
 _url_re = re.compile(r"""
     https?://(?:\w+\.)?arte.tv/guide/

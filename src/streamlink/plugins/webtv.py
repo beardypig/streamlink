@@ -36,7 +36,7 @@ class WebTV(Plugin):
         if len(sources):
             sdata = parse_json(sources[0], schema=self._sources_schema)
             for source in sdata:
-                self.logger.debug("Found stream of type: {}", source[u'type'])
+                self.logger.debug("Found stream of type: {0}", source[u'type'])
                 if source[u'type'] == u"application/vnd.apple.mpegurl":
                     # if the url has no protocol, assume it is http
                     url = source[u"src"]

@@ -74,7 +74,7 @@ class Dogan(Plugin):
     def _get_streams(self):
         content_id = self._get_content_id()
         if content_id:
-            self.logger.debug(u"Loading content: {}", content_id)
+            self.logger.debug(u"Loading content: {0}", content_id)
             hls_url = self._get_hls_url(content_id)
             return HLSStream.parse_variant_playlist(self.session, hls_url)
         else:

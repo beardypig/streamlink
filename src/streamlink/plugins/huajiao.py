@@ -12,8 +12,8 @@ from streamlink.plugin.api import http, validate
 from streamlink.stream import (HTTPStream, HLSStream)
 
 USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/52.0.2743.116 Safari/537.36"
-HUAJIAO_URL = "http://www.huajiao.com/l/{}"
-LAPI_URL = "http://g2.live.360.cn/liveplay?stype=flv&channel={}&bid=huajiao&sn={}&sid={}&_rate=xd&ts={}&r={}&_ostype=flash&_delay=0&_sign=null&_ver=13"
+HUAJIAO_URL = "http://www.huajiao.com/l/{0}"
+LAPI_URL = "http://g2.live.360.cn/liveplay?stype=flv&channel={0}&bid=huajiao&sn={1}&sid={2}&_rate=xd&ts={3}&r={4}&_ostype=flash&_delay=0&_sign=null&_ver=13"
 
 _url_re = re.compile(r"""
         http(s)?://(www\.)?huajiao.com

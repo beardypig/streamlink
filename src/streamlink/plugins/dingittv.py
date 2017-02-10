@@ -32,8 +32,8 @@ class DingitTV(Plugin):
         validate.get(0)
     )
 
-    pereakaurl = "http://dingitmedia-vh.akamaihd.net/i/{}/master.m3u8"
-    akaurl = "https://dingmedia1-a.akamaihd.net/processed/delivery/{}70f8b7bc-5ed4-336d-609a-2d2cd86288c6.m3u8"
+    pereakaurl = "http://dingitmedia-vh.akamaihd.net/i/{0}/master.m3u8"
+    akaurl = "https://dingmedia1-a.akamaihd.net/processed/delivery/{0}70f8b7bc-5ed4-336d-609a-2d2cd86288c6.m3u8"
 
     @classmethod
     def can_handle_url(cls, url):

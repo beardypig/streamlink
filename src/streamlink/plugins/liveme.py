@@ -37,7 +37,7 @@ class LiveMe(Plugin):
         video_id = url_params.get("videoid")
 
         if video_id:
-            self.logger.debug("Found Video ID: {}", video_id)
+            self.logger.debug("Found Video ID: {0}", video_id)
             res = http.get(self.api_url.format(id=video_id))
             data = http.json(res, schema=self.api_schema)
             hls = self._make_stream(data["video_info"]["hlsvideosource"])

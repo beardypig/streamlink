@@ -456,7 +456,7 @@ class HDSStream(Stream):
                                     exception=IOError)
 
         if manifest.findtext("drmAdditionalHeader"):
-            logger.debug("Omitting HDS stream protected by DRM: {}", url)
+            logger.debug("Omitting HDS stream protected by DRM: {0}", url)
             return {}
 
         parsed = urlparse(url)
