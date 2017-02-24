@@ -1,5 +1,4 @@
 import imp
-import locale
 import pkgutil
 import re
 import sys
@@ -43,6 +42,8 @@ class Streamlink(object):
     def __init__(self):
         self.http = api.HTTPSession()
         self.options = Options({
+            "offset-start": 0,
+            "offset-end": None,
             "hds-live-edge": 10.0,
             "hds-segment-attempts": 3,
             "hds-segment-threads": 1,
@@ -85,7 +86,11 @@ class Streamlink(object):
         **Available options**:
 
         ======================== =========================================
-        hds-live-edge            ( float) Specify the time live HDS
+        offset-start             (int) Number of seconds to skip at the
+                                 beginning of a VOD stream.
+        offset-end               (int) Number of seconds to skip from the
+                                 end of a VOD stream.
+        hds-live-edge            (float) Specify the time live HDS
                                  streams will start from the edge of
                                  stream, default: ``10.0``
 

@@ -25,6 +25,7 @@ _option_re = re.compile("""
     \s*
     (?P<value>.*) # The value, anything goes.
 """, re.VERBOSE)
+_hours_minutes_seconds_re = re.compile(r"(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?")
 
 
 class ArgumentParser(argparse.ArgumentParser):
@@ -138,6 +139,22 @@ def boolean(value):
         raise argparse.ArgumentTypeError("{0} was not one of {{{1}}}".format(value, ', '.join(truths+falses)))
 
     return value.lower() in truths
+
+def hours_minutes_seconds(value):
+    """
+    converts hours minutes seconds to seconds
+    :param value: (string) 00h00m00s formatted string
+    :return: seconds
+    """
+    match = _hours_minutes_seconds_re.match(value)
+    if not match:
+        raise ValueError
+    s = 0
+    s += int(match.group(1) or 0) * 60 * 60
+    s += int(match.group(2) or 0) * 60
+    s += int(match.group(3) or 0)
+    return s
+
 
 parser = ArgumentParser(
     fromfile_prefix_chars="@",
@@ -651,6 +668,37 @@ transport.add_argument(
     Timeout for reading data from HLS streams.
 
     Default is 60.0.
+    """)
+transport.add_argument(
+    "--offset-start",
+    type=hours_minutes_seconds,
+    metavar="HHhMMmSSs",
+    default=None,
+    help="""
+    Amount of time to skip from the beginning of the stream, VOD streams only.
+
+    The amount of time to skip is given in hours, minutes, and seconds.
+    The argument is in the form of 00h00m00s, each of h (hours), m (minutes),
+    or s (seconds) is optional, but they must appear in that order. eg.
+    - 1m is 1 minute
+    - 50s is 50 seconds
+    - 1m30s is 1 minute 30 seconds
+    - 1h is 1 hour
+    - 2h30m10s is 2 hours, 30 minutes and 10 seconds
+
+    Default is 0h0m0s
+    """)
+transport.add_argument(
+    "--offset-end",
+    type=hours_minutes_seconds,
+    metavar="HHhMMmSSs",
+    default=None,
+    help="""
+    The time in the stream to end at, VOD streams only.
+
+    The time argument takes the same form as --offset-start.
+
+    Default is END.
     """)
 transport.add_argument(
     "--hls-audio-select",

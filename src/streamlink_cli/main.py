@@ -700,6 +700,12 @@ def setup_streamlink():
 
 def setup_options():
     """Sets Streamlink options."""
+    if args.offset_start:
+        streamlink.set_option("offset-start", args.offset_start)
+
+    if args.offset_end:
+        streamlink.set_option("offset-end", args.offset_end)
+
     if args.hls_live_edge:
         streamlink.set_option("hls-live-edge", args.hls_live_edge)
 

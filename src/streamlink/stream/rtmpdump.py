@@ -25,6 +25,8 @@ class RTMPStream(StreamProcess):
 
         self.cmd = self.session.options.get("rtmp-rtmpdump")
         self.timeout = self.session.options.get("rtmp-timeout")
+        self.duration_offset_start = self.session.options.get("offset-start")
+        self.duration_offset_end = self.session.options.get("offset-end")
         self.redirect = redirect
 
         # set rtmpdump logging level
@@ -60,6 +62,13 @@ class RTMPStream(StreamProcess):
 
         if "weeb" in self.parameters and not self._supports_param("weeb"):
             raise StreamError("Installed rtmpdump does not support --weeb argument")
+
+        if "live" not in self.parameters:
+            if self.duration_offset_start and self.duration_offset_start > 0:
+                self.parameters["start"] = self.duration_offset_start
+
+            if self.duration_offset_end and self.duration_offset_end > 0:
+                self.parameters["stop"] = self.duration_offset_end
 
         if self.redirect:
             self._check_redirect()
