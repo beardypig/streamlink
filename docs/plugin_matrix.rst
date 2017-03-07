@@ -211,6 +211,7 @@ wattv               wat.tv               --    Yes
 webtv               web.tv               Yes   --
 weeb                weeb.tv              Yes   --    Requires rtmpdump with K-S-V patches.
 wwenetwork          network.wwe.com      Yes   Yes   Requires an account to access any content.
+yleareena           areena.yle.fi        Yes   No    Streams may be geo-restricted to Finland.
 younow              younow.com           Yes   --
 youtube             - youtube.com        Yes   Yes   Protected videos are not supported.
                     - youtu.be
