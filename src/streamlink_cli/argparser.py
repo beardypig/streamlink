@@ -1180,7 +1180,7 @@ plugin.add_argument(
     "--animelab-password",
     metavar="PASSWORD",
     help="""
-    A TVPlayer account password to use with --animelab-email.
+    A AnimeLab account password to use with --animelab-email.
     """
 )
 plugin.add_argument(
