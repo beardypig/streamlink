@@ -1,10 +1,10 @@
 import re
 
 from streamlink import PluginError
-from streamlink.plugin import Plugin
 from streamlink.plugin.api import http, validate, useragents
 from streamlink.stream import HLSStream, HTTPStream, RTMPStream
-from streamlink.utils import urlparse, parse_qsl
+from streamlink.compat import urlparse, parse_qsl
+from streamlink.plugin import Plugin
 
 
 class BrightcovePlayer(object):
