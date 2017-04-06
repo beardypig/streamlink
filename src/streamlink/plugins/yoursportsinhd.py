@@ -11,7 +11,7 @@ from streamlink.stream import HLSStream
 from streamlink.stream.hls import HLSStreamWriter, HLSStreamReader, num_to_iv
 
 _url_re = re.compile(r"https?://(\w+\.)?yoursportsinhd.com")
-_m3u8_re = re.compile(r"""sources:[\s\S]+src:\s["'](?:\s)?(?P<url>(?!http://nasatv)[^"'\s]+)(?:\s)?["']""")
+_m3u8_re = re.compile(r"""#hlsjslive.*?sources:.*?src:\s*["']\s*(?P<url>(?!http://nasatv).*?)\s*["']""", re.DOTALL)
 
 
 class YourSportsInHDHLSStreamWriter(HLSStreamWriter):
@@ -76,6 +76,7 @@ class YourSportsInHD(Plugin):
         hls_url = m3u8_link.group("url")
 
         if hls_url:
+            self.logger.debug("HLS URL: {0}", hls_url)
             for q, s in HLSStream.parse_variant_playlist(self.session, hls_url).items():
                 yield q, YourSportsInHDHLSStream(self.session, s.url)
 
