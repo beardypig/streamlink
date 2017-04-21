@@ -5,6 +5,7 @@ from Crypto.Cipher import AES
 
 from streamlink.stream import hls_playlist
 from streamlink.stream.ffmpegmux import FFMPEGMuxer, MuxedStream
+from streamlink.stream.hls_playlist import M3U8Parser
 from streamlink.stream.http import HTTPStream
 from streamlink.stream.segmented import (SegmentedStreamReader,
                                          SegmentedStreamWriter,
@@ -122,6 +123,7 @@ class HLSStreamWorker(SegmentedStreamWorker):
         self.playlist_reload_time = 15
         self.live_edge = self.session.options.get("hls-live-edge")
         self.playlist_reload_retries = self.session.options.get("hls-playlist-reload-attempts")
+        self.parser = self.stream.parser
 
         self.reload_playlist()
 
@@ -136,7 +138,7 @@ class HLSStreamWorker(SegmentedStreamWorker):
                                     retries=self.playlist_reload_retries,
                                     **self.reader.request_params)
         try:
-            playlist = hls_playlist.load(res.text, res.url)
+            playlist = hls_playlist.load(res.text, res.url, parser=self.parser)
         except ValueError as err:
             raise StreamError(err)
 
@@ -223,8 +225,9 @@ class HLSStreamReader(SegmentedStreamReader):
 class MuxedHLSStream(MuxedStream):
     __shortname__ = "hls-multi"
 
-    def __init__(self, session, video, audio, force_restart=False, ffmpeg_options=None, **args):
-        substreams = map(lambda url: HLSStream(session, url, force_restart=force_restart, **args), [video, audio])
+    def __init__(self, session, video, audio, force_restart=False, ffmpeg_options=None, parser=M3U8Parser, **args):
+        substreams = map(lambda url: HLSStream(session, url, force_restart=force_restart, parser=parser, **args),
+                         [video, audio])
         ffmpeg_options = ffmpeg_options or {}
 
         super(MuxedHLSStream, self).__init__(session, *substreams, format="mpegts", **ffmpeg_options)
@@ -246,9 +249,10 @@ class HLSStream(HTTPStream):
 
     __shortname__ = "hls"
 
-    def __init__(self, session_, url, force_restart=False, **args):
+    def __init__(self, session_, url, force_restart=False, parser=M3U8Parser, **args):
         HTTPStream.__init__(self, session_, url, **args)
         self.force_restart = force_restart
+        self.parser = parser
 
     def __repr__(self):
         return "<HLSStream({0!r})>".format(self.url)
@@ -272,7 +276,7 @@ class HLSStream(HTTPStream):
     def parse_variant_playlist(cls, session_, url, name_key="name",
                                name_prefix="", check_streams=False,
                                force_restart=False, name_fmt=None,
-                               **request_params):
+                               parser=M3U8Parser, **request_params):
         """Attempts to parse a variant playlist and return its streams.
 
         :param url: The URL of the variant playlist.
@@ -283,6 +287,7 @@ class HLSStream(HTTPStream):
         :param force_restart: Start at the first segment even for a live stream
         :param name_fmt: A format string for the name, allowed format keys are
                          name, pixels, bitrate.
+        :param parser: HLS parser to use
         """
         logger = session_.logger.new_module("hls.parse_variant_playlist")
         locale = session_.localization
@@ -294,12 +299,12 @@ class HLSStream(HTTPStream):
         res = session_.http.get(url, exception=IOError, **request_params)
 
         try:
-            parser = hls_playlist.load(res.text, base_uri=res.url)
+            parsed = hls_playlist.load(res.text, base_uri=res.url, parser=parser)
         except ValueError as err:
             raise IOError("Failed to parse playlist: {0}".format(err))
 
         streams = {}
-        for playlist in filter(lambda p: not p.is_iframe, parser.playlists):
+        for playlist in filter(lambda p: not p.is_iframe, parsed.playlists):
             names = dict(name=None, pixels=None, bitrate=None)
             audio_streams = []
             fallback_audio = None
@@ -379,9 +384,10 @@ class HLSStream(HTTPStream):
                                         video=playlist.uri,
                                         audio=external_audio and external_audio.uri,
                                         force_restart=force_restart,
+                                        parser=parser,
                                         **request_params)
             else:
-                stream = HLSStream(session_, playlist.uri, force_restart=force_restart, **request_params)
+                stream = HLSStream(session_, playlist.uri, force_restart=force_restart, parser=parser, **request_params)
             streams[name_prefix + stream_name] = stream
 
         return streams

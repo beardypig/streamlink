@@ -2,19 +2,17 @@ import base64
 import pickle
 import re
 
-from Crypto.Cipher import AES
-
-from streamlink import StreamError
 from streamlink.plugin import Plugin
 from streamlink.plugin.api import http
 from streamlink.stream import HLSStream
-from streamlink.stream.hls import HLSStreamWriter, HLSStreamReader, num_to_iv
+
+from streamlink.stream.hls_playlist import M3U8Parser
 
 _url_re = re.compile(r"https?://(\w+\.)?yoursportsinhd.com")
 _m3u8_re = re.compile(r"""#hlsjslive.*?sources:.*?src:\s*["']\s*(?P<url>(?!http://nasatv).*?)\s*["']""", re.DOTALL)
 
 
-class YourSportsInHDHLSStreamWriter(HLSStreamWriter):
+class YSIHDM3U8Parser(M3U8Parser):
     replace_pairs = pickle.loads(base64.b64decode(
         b'gANdcQAoWBYAAABodHRwczovL21mLnN2Yy5uaGwuY29tcQFYJQAAAGh0dHA6Ly95b3Vyc3'
         b'BvcnRzaW5oZC5jb20vbmhsL2dldF9rZXlxAoZxA1hKAAAAaHR0cHM6Ly9icm9hZGJhbmQu'
@@ -26,42 +24,12 @@ class YourSportsInHDHLSStreamWriter(HLSStreamWriter):
         b'tleS1zZXJ2aWNlLnRvdHN1a28udHYva2V5LXNlcnZpY2Uva2V5L2tleT9xClgmAAAAaHR0'
         b'cDovL3lvdXJzcG9ydHNpbmhkLmNvbS92dWUvZ2V0X2tleS9xC4ZxDGUu'))
 
-    def create_decryptor(self, key, sequence):
-        if key.method != "AES-128":
-            raise StreamError("Unable to decrypt cipher {0}", key.method)
-
-        if not key.uri:
-            raise StreamError("Missing URI to decryption key")
-
-        key_uri = key.uri
-        for args in self.replace_pairs:
-            key_uri = key_uri.replace(*args)
-
-        if self.key_uri != key_uri:
-            res = self.session.http.get(key_uri, exception=StreamError,
-                                        retries=self.retries,
-                                        **self.reader.request_params)
-            self.key_data = res.content
-            self.key_uri = key_uri
-
-        iv = key.iv or num_to_iv(sequence)
-
-        # Pad IV if needed
-        iv = b"\x00" * (16 - len(iv)) + iv
-
-        return AES.new(self.key_data, AES.MODE_CBC, iv)
-
-
-class YourSportsInHDHLSStreamReader(HLSStreamReader):
-    __writer__ = YourSportsInHDHLSStreamWriter
-
-
-class YourSportsInHDHLSStream(HLSStream):
-    def open(self):
-        reader = YourSportsInHDHLSStreamReader(self)
-        reader.open()
-
-        return reader
+    def uri(self, uri):
+        uri = super(YSIHDM3U8Parser, self).uri(uri)
+        if uri:
+            for args in self.replace_pairs:
+                uri = uri.replace(*args)
+        return uri
 
 
 class YourSportsInHD(Plugin):
@@ -77,8 +45,9 @@ class YourSportsInHD(Plugin):
 
         if hls_url:
             self.logger.debug("HLS URL: {0}", hls_url)
-            for q, s in HLSStream.parse_variant_playlist(self.session, hls_url).items():
-                yield q, YourSportsInHDHLSStream(self.session, s.url)
-
+            hls_url = "http://cors2.yoursportsinhd.com/" + hls_url
+            for q, s in HLSStream.parse_variant_playlist(self.session, hls_url, parser=YSIHDM3U8Parser,
+                                                         headers={"Origin": "http://yoursportsinhd.com"}).items():
+                yield q, s
 
 __plugin__ = YourSportsInHD
