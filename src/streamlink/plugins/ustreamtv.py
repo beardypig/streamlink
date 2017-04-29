@@ -167,7 +167,7 @@ class UStreamTV(Plugin):
 
     def _api_get_streams(self, media_id, application, cluster="live", referrer=None, retries=3):
         if retries > 0:
-            app_id = 11
+            app_id = 103
             app_ver = 2
             referrer = referrer or self.url
             self.api = UHSClient(self.session, media_id, application, referrer=referrer, cluster=cluster, app_id=app_id,
@@ -206,8 +206,8 @@ class UStreamTV(Plugin):
             has_results = True
             if isinstance(streams, list):
                 for stream in streams:
-                    for q, s in HLSStream.parse_variant_playlist(self.session, stream["url"]).items():
-                        yield q, UStreamHLSStream(self.session, s.url, self.api)
+                    for s in HLSStream.parse_variant_playlist(self.session, stream["url"]).items():
+                        yield s
             elif isinstance(streams, dict):
                 for stream in streams.get("streams", []):
                     name = "{0}k".format(stream["bitrate"])
