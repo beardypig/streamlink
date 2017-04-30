@@ -108,6 +108,7 @@ class UHSClient(object):
 
 
 class UStreamHLSStream(HLSStream):
+    __shortname__ = "hls-ustream"
     class APIPoller(Thread):
         """
         Poll the UStream API so that stream URLs stay valid, otherwise they expire after 30 seconds.
@@ -144,6 +145,9 @@ class UStreamHLSStream(HLSStream):
         self.poller.start()
         self.logger.debug("Starting API polling thread")
         return reader
+
+    def to_url(self):
+        raise TypeError("{0} cannot be converted to a URL".format(self.shortname()))
 
 
 class UStreamTV(Plugin):
