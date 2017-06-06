@@ -862,6 +862,15 @@ def setup_plugin_options():
     if args.rtve_mux_subtitles:
         streamlink.set_plugin_option("rtve", "mux_subtitles", args.rtve_mux_subtitles)
 
+    if args.funimation_email:
+        streamlink.set_plugin_option("funimationnow", "email", args.funimation_email)
+    if args.funimation_email and not args.funimation_password:
+        funimation_password = console.askpass("Enter Funimation password: ")
+    else:
+        funimation_password = args.funimation_password
+    if funimation_password:
+        streamlink.set_plugin_option("funimationnow", "password", funimation_password)
+
     if args.funimation_mux_subtitles:
         streamlink.set_plugin_option("funimationnow", "mux_subtitles", True)
 

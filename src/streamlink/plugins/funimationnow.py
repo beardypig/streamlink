@@ -6,6 +6,7 @@ import re
 from streamlink.plugin import Plugin, PluginOptions
 from streamlink.plugin.api import http
 from streamlink.plugin.api import useragents
+from streamlink.plugin.api import validate
 from streamlink.stream import HLSStream
 from streamlink.stream import HTTPStream
 from streamlink.stream.ffmpegmux import MuxedStream
@@ -13,10 +14,18 @@ from streamlink.stream.ffmpegmux import MuxedStream
 
 class Experience(object):
     api_base = "https://prod-api-funimationnow.dadcdigital.com/api"
+    login_api_url = api_base+"/auth/login/"
     show_api_url = api_base+"/source/catalog/title/experience/{experience_id}/"
     sources_api_url = api_base+"/source/catalog/video/{experience_id}/signed/"
     languages = ["english", "japanese"]
     alphas = ["uncut", "simulcast"]
+
+    login_schema = validate.Schema(validate.any(
+        {"success": False,
+         "error": validate.text},
+        {"token": validate.text,
+         "user": {"id": int}}
+    ))
 
     def __init__(self, experience_id):
         """
@@ -25,6 +34,20 @@ class Experience(object):
         self.experience_id = experience_id
         self._language = None
         self.cache = {}
+        self.token = None
+
+    def request(self, *args, **kwargs):
+        headers = kwargs.pop("headers", {})
+        if self.token:
+            headers.update({"Authorization": "Token {0}".format(self.token)})
+
+        return http.request(*args, headers=headers, **kwargs)
+
+    def get(self, *args, **kwargs):
+        return self.request("GET", *args, **kwargs)
+
+    def post(self, *args, **kwargs):
+        return self.request("POST", *args, **kwargs)
 
     @property
     def pinst_id(self):
@@ -34,7 +57,7 @@ class Experience(object):
 
     def _update(self):
         api_url = self.show_api_url.format(experience_id=self.experience_id)
-        res = http.get(api_url)
+        res = self.get(api_url)
         data = http.json(res)
         self.cache[self.experience_id] = data
 
@@ -91,14 +114,24 @@ class Experience(object):
         :return: sources dict
         """
         api_url = self.sources_api_url.format(experience_id=self.experience_id)
-        res = http.get(api_url, params=dict(pinstId=self.pinst_id))
+        res = self.get(api_url, params=dict(pinstId=self.pinst_id))
         return http.json(res)
+
+    def login(self, email, password):
+        r = self.post(self.login_api_url,
+                      data=dict(username=email, password=password),
+                      raise_for_status=False)
+        d = http.json(r, schema=self.login_schema)
+        self.token = d.get("token", None)
+        return self.token is not None
 
 
 class FunimationNow(Plugin):
     options = PluginOptions({
         "language": "english",
-        "mux_subtitles": False
+        "mux_subtitles": False,
+        "email": None,
+        "password": None
     })
     url_re = re.compile(r"""
         https?://(?:www\.)funimation(.com|now.uk)
@@ -121,6 +154,11 @@ class FunimationNow(Plugin):
         if experience_id:
             self.logger.debug("Found experience ID: {0}", experience_id)
             exp = Experience(experience_id)
+            if self.get_option("email") and self.get_option("password"):
+                if exp.login(self.get_option("email"), self.get_option("password")):
+                    self.logger.info("Logged in to Funimation as {0}", self.get_option("email"))
+                else:
+                    self.logger.warning("Failed to login")
 
             self.logger.debug("Found episode: {0}", exp.episode_info["episodeTitle"])
             self.logger.debug("  has languages: {0}", ", ".join(exp.episode_info["languages"].keys()))
@@ -165,5 +203,6 @@ class FunimationNow(Plugin):
 
         else:
             self.logger.error("Could not find experience ID?!")
+
 
 __plugin__ = FunimationNow

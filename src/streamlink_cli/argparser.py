@@ -1169,6 +1169,20 @@ plugin.add_argument(
     """
 )
 plugin.add_argument(
+    "--funimation-email",
+    metavar="EMAIL",
+    help="""
+    The email address used to register with Funimation.
+    """
+)
+plugin.add_argument(
+    "--funimation-password",
+    metavar="PASSWORD",
+    help="""
+    A Funimation account password to use with --funimation-email.
+    """
+)
+plugin.add_argument(
     "--funimation-language",
     type=str,
     choices=["en", "ja", "english", "japanese"],
