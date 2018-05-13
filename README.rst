@@ -89,7 +89,7 @@ issue tracker or submit a new pull request. Please read
 Backers
 =======
 
-Thank you to all our backers! `Become a backer`_
+Thank you to all our backers! [`Become a backer`_]
 
 |opencollective-backers|
 
@@ -97,7 +97,7 @@ Sponsors
 ========
 
 Support this project by becoming a sponsor. Your logo will show up here
-with a link to your website.
+with a link to your website. [`Become a sponsor`_]
 
 |opencollective-sponsor-0|
 |opencollective-sponsor-1|
@@ -142,6 +142,7 @@ with a link to your website.
 .. |opencollective-sponsor-9| image:: https://opencollective.com/streamlink/sponsor/9/avatar.svg
    :target: https://opencollective.com/streamlink/sponsor/9/website
 .. _Become a backer: https://opencollective.com/streamlink#backer
+.. _Become a sponsor: https://opencollective.com/streamlink#sponsor
 .. _streamlink-website: https://streamlink.github.io
 .. _streamlink-plugins: https://streamlink.github.io/plugin_matrix.html
 .. _streamlink-documentation: https://streamlink.github.io/cli.html
