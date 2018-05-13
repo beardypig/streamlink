@@ -1,4 +1,4 @@
-`Streamlink <streamlink-website>`_
+`Streamlink <streamlink-website_>`_
 ==================================
 
 |travis-badge|
