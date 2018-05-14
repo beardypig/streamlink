@@ -1,6 +1,7 @@
 import re
 import struct
 from collections import defaultdict, namedtuple
+from threading import Thread, Event
 
 from Crypto.Cipher import AES
 
@@ -470,3 +471,35 @@ class HLSStream(HTTPStream):
             streams[name_prefix + stream_name] = stream
 
         return streams
+
+
+class PollingHLSStream(HLSStream):
+    __shortname__ = "hls-polling"
+
+    class Poller(Thread):
+        def __init__(self, stream, refresh_callback, interval=10.0):
+            Thread.__init__(self)
+            self.stopped = Event()
+            self.stream = stream
+            self.refresh_callback = refresh_callback
+            self.interval = interval
+
+        def stop(self):
+            self.stopped.set()
+
+        def run(self):
+            while not self.stopped.wait(1.0):
+                res = self.refresh_callback(self.stream)
+
+    def __init__(self, session_, url, refresh_callback, polling_interval=10.0, force_restart=False, **args):
+        super(PollingHLSStream, self).__init__(session_, url, force_restart, **args)
+        self.logger = session_.logger.new_module("stream.polling-hls")
+        self.poller = self.Poller(self, refresh_callback, polling_interval)
+        self.poller.setDaemon(True)
+
+    def open(self):
+        reader = HLSStreamReader(self)
+        reader.open()
+        self.poller.start()
+        self.logger.debug("Starting HLS polling thread")
+        return reader
