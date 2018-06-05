@@ -44,8 +44,8 @@ class Streamlink(object):
     """A Streamlink session is used to keep track of plugins,
        options and log settings."""
 
-    def __init__(self):
-        self.http = api.HTTPSession()
+    def __init__(self, pac=None, pac_proxy_auth=None):
+        self.http = api.HTTPSession(pac=pac, proxy_auth=pac_proxy_auth)
         self.options = Options({
             "hds-live-edge": 10.0,
             "hds-segment-attempts": 3,

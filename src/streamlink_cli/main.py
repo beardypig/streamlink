@@ -14,8 +14,14 @@ from contextlib import closing
 from distutils.version import StrictVersion
 from functools import partial
 from itertools import chain
+
+from pypac import get_pac
+from pypac.os_settings import file_url_to_local_path
+from requests.auth import HTTPProxyAuth
 from socks import __version__ as socks_version
 from time import sleep
+
+from streamlink.packages.requests_file import FileAdapter
 from websocket import __version__ as websocket_version
 
 from streamlink import __version__ as streamlink_version
@@ -736,8 +742,24 @@ def setup_plugins(extra_plugin_dir=None):
 def setup_streamlink():
     """Creates the Streamlink session."""
     global streamlink
+    pac_file, pac_proxy_auth = None, None
 
-    streamlink = Streamlink()
+    # setup the PAC proxy
+    if args.http_pac_username and args.http_pac_password:
+        pac_proxy_auth = HTTPProxyAuth(args.http_pac_username, args.http_pac_password)
+
+    if args.http_pac_url:
+        log.debug("Using PAC configuration URL: {0}".format(args.http_pac_url))
+        if args.http_pac_url.startswith("file://"):
+            sess = requests.Session()
+            sess.mount('file://', FileAdapter())
+            resp = sess.get(args.http_pac_url)
+            pac_file = get_pac(js=resp.content)
+        else:
+            pac_file = get_pac(args.http_pac_url)
+
+
+    streamlink = Streamlink(pac_file, pac_proxy_auth)
 
 
 def setup_options():
@@ -936,7 +958,9 @@ def check_version(force=False):
 
 
 def setup_logging(stream=sys.stdout, level="info"):
-    logger.basicConfig(stream=stream, level=level, format="[{name}][{levelname}] {message}", style="{")
+    logger.basicConfig(stream=stream, level=level,
+                       format="[{name}][{levelname}] {message}",
+                       style="{", datefmt="%H:%M:%S")
 
 
 def main():

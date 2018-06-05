@@ -1,8 +1,7 @@
 import time
 from requests import Session, __build__ as requests_version
 from requests.adapters import HTTPAdapter
-from requests.exceptions import RequestException
-
+from pypac import PACSession
 from streamlink.packages.requests_file import FileAdapter
 
 try:
@@ -60,9 +59,9 @@ class HTTPAdapterWithReadTimeout(HTTPAdapter):
         return conn
 
 
-class HTTPSession(Session):
+class HTTPSession(PACSession):
     def __init__(self, *args, **kwargs):
-        Session.__init__(self, *args, **kwargs)
+        super(HTTPSession, self).__init__(*args, **kwargs)
 
         self.timeout = 20.0
 
@@ -140,7 +139,7 @@ class HTTPSession(Session):
         exception = kwargs.pop("exception", PluginError)
         headers = kwargs.pop("headers", {})
         params = kwargs.pop("params", {})
-        proxies = kwargs.pop("proxies", self.proxies)
+        proxies = kwargs.pop("proxies", self.proxies) or None
         raise_for_status = kwargs.pop("raise_for_status", True)
         schema = kwargs.pop("schema", None)
         session = kwargs.pop("session", None)
@@ -156,12 +155,12 @@ class HTTPSession(Session):
 
         while True:
             try:
-                res = Session.request(self, method, url,
-                                      headers=headers,
-                                      params=params,
-                                      timeout=timeout,
-                                      proxies=proxies,
-                                      *args, **kwargs)
+                res = super(HTTPSession, self).request(method, url,
+                                                       headers=headers,
+                                                       params=params,
+                                                       timeout=timeout,
+                                                       proxies=proxies,
+                                                       **kwargs)
                 if raise_for_status and res.status_code not in acceptable_status:
                     res.raise_for_status()
                 break

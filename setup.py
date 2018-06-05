@@ -52,6 +52,9 @@ deps.append("websocket-client")
 # Support for SOCKS proxies
 deps.append("PySocks!=1.5.7,>=1.5.6")  # requests[socks] uses this version
 
+# Support for PAC (proxy auto config)
+deps.append("pypac")
+
 # win-inet-pton is missing a dependency in PySocks, this has been fixed but not released yet
 if os.name == "nt" and version_info < (3, 0):
     # Required due to missing socket.inet_ntop & socket.inet_pton method in Windows Python 2.x

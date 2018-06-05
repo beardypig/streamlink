@@ -1042,6 +1042,28 @@ def build_parser():
         """
     )
     http.add_argument(
+        "--http-pac-url",
+        metavar="URL",
+        default=None,
+        help="""
+        URL to your PAC file. To load a local file, use the file:// scheme.
+        """
+    )
+    http.add_argument(
+        "--http-pac-username",
+        metavar="USERNAME",
+        help="""
+        Username pass-through for PAC
+        """
+    )
+    http.add_argument(
+        "--http-pac-password",
+        metavar="USERNAME",
+        help="""
+        Password pass-through for PAC
+        """
+    )
+    http.add_argument(
         "--http-cookie",
         metavar="KEY=VALUE",
         type=keyvalue,
