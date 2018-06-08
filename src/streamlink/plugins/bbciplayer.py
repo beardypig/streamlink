@@ -43,7 +43,18 @@ class BBCiPlayer(Plugin):
     platforms = ("pc", "iptv-all")
     session_url = "https://session.bbc.com/session"
     auth_url = "https://account.bbc.com/signin"
+    title_re = re.compile(
+        r'"(?:channel|metadata)"\s*:\s*{.*?"title"\s*:\s*"(.*?)"')
 
+    title_schema = validate.Schema(
+        validate.transform(title_re.search),
+        validate.any(
+            None,
+            validate.all(
+                validate.get(1)
+            )
+        )
+    )
     mediator_schema = validate.Schema(
         {
             "episode": {
@@ -147,6 +158,9 @@ class BBCiPlayer(Plugin):
         else:
             m = self.tvip_re.search(res.text)
         return m and m.group(1)
+
+    def get_title(self):
+        return http.get(self.url, schema=self.title_schema)
 
     def mediaselector(self, vpid):
         urls = defaultdict(set)
