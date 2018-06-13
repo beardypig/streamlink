@@ -1,8 +1,8 @@
 import logging
 import re
 import struct
-
 from collections import defaultdict, namedtuple
+
 from Crypto.Cipher import AES
 from requests.exceptions import ChunkedEncodingError
 
@@ -31,7 +31,9 @@ def pkcs7_decode(paddedData, keySize=16):
     # Use ord + [-1:] to support both python 2 and 3
     val = ord(paddedData[-1:])
     if val > keySize:
-        raise StreamError("Input is not padded or padding is corrupt, got padding size of {0}".format(val))
+        raise StreamError(
+            "Input is not padded or padding is corrupt, got padding size of {0}".format(
+                val))
 
     return paddedData[:-val]
 
@@ -119,7 +121,8 @@ class HLSStreamWriter(SegmentedStreamWriter):
         try:
             request_params = self.create_request_params(sequence)
             # skip ignored segment names
-            if self.ignore_names and self.ignore_names_re.search(sequence.segment.uri):
+            if self.ignore_names and self.ignore_names_re.search(
+                    sequence.segment.uri):
                 log.debug("Skipping segment {0}".format(sequence.num))
                 return
 
@@ -178,30 +181,39 @@ class HLSStreamWorker(SegmentedStreamWorker):
         self.playlist_sequences = []
         self.playlist_reload_time = 15
         self.live_edge = self.session.options.get("hls-live-edge")
-        self.playlist_reload_retries = self.session.options.get("hls-playlist-reload-attempts")
-        self.duration_offset_start = int(self.stream.start_offset + (self.session.options.get("hls-start-offset") or 0))
+        self.playlist_reload_retries = self.session.options.get(
+            "hls-playlist-reload-attempts")
+        self.duration_offset_start = int(self.stream.start_offset + (
+            self.session.options.get("hls-start-offset") or 0))
         self.duration_limit = self.stream.duration or (
-            int(self.session.options.get("hls-duration")) if self.session.options.get("hls-duration") else None)
-        self.hls_live_restart = self.stream.force_restart or self.session.options.get("hls-live-restart")
+            int(self.session.options.get(
+                "hls-duration")) if self.session.options.get(
+                "hls-duration") else None)
+        self.hls_live_restart = self.stream.force_restart or self.session.options.get(
+            "hls-live-restart")
 
         self.reload_playlist()
 
         if self.playlist_end is None:
             if self.duration_offset_start > 0:
-                log.debug("Time offsets negative for live streams, skipping back {0} seconds",
-                          self.duration_offset_start)
+                log.debug(
+                    "Time offsets negative for live streams, skipping back {0} seconds",
+                    self.duration_offset_start)
             # live playlist, force offset durations back to None
             self.duration_offset_start = -self.duration_offset_start
 
         if self.duration_offset_start != 0:
-            self.playlist_sequence = self.duration_to_sequence(self.duration_offset_start, self.playlist_sequences)
+            self.playlist_sequence = self.duration_to_sequence(
+                self.duration_offset_start, self.playlist_sequences)
 
         if self.playlist_sequences:
             log.debug("First Sequence: {0}; Last Sequence: {1}",
-                      self.playlist_sequences[0].num, self.playlist_sequences[-1].num)
-            log.debug("Start offset: {0}; Duration: {1}; Start Sequence: {2}; End Sequence: {3}",
-                      self.duration_offset_start, self.duration_limit,
-                      self.playlist_sequence, self.playlist_end)
+                      self.playlist_sequences[0].num,
+                      self.playlist_sequences[-1].num)
+            log.debug(
+                "Start offset: {0}; Duration: {1}; Start Sequence: {2}; End Sequence: {3}",
+                self.duration_offset_start, self.duration_limit,
+                self.playlist_sequence, self.playlist_end)
 
     def _reload_playlist(self, text, url):
         return hls_playlist.load(text, url)
@@ -289,7 +301,8 @@ class HLSStreamWorker(SegmentedStreamWorker):
                 yield sequence
                 total_duration += sequence.segment.duration
                 if self.duration_limit and total_duration >= self.duration_limit:
-                    log.info("Stopping stream early after {0}".format(self.duration_limit))
+                    log.info("Stopping stream early after {0}".format(
+                        self.duration_limit))
                     return
 
                 # End of stream
@@ -325,7 +338,8 @@ class HLSStreamReader(SegmentedStreamReader):
 class MuxedHLSStream(MuxedStream):
     __shortname__ = "hls-multi"
 
-    def __init__(self, session, video, audio, force_restart=False, ffmpeg_options=None, **args):
+    def __init__(self, session, video, audio, force_restart=False,
+                 ffmpeg_options=None, **args):
         tracks = [video]
         maps = ["0:v?", "0:a?"]
         if audio:
@@ -354,7 +368,8 @@ class HLSStream(HTTPStream):
 
     __shortname__ = "hls"
 
-    def __init__(self, session_, url, force_restart=False, start_offset=0, duration=None, **args):
+    def __init__(self, session_, url, force_restart=False, start_offset=0,
+                 duration=None, **args):
         HTTPStream.__init__(self, session_, url, **args)
         self.force_restart = force_restart
         self.start_offset = start_offset
@@ -434,7 +449,8 @@ class HLSStream(HTTPStream):
 
                 # if the media is "audoselect" and it better matches the users preferences, use that
                 # instead of default
-                if not default_audio and (media.autoselect and locale.equivalent(language=media.language)):
+                if not default_audio and (media.autoselect and locale.equivalent(
+                        language=media.language)):
                     default_audio = [media]
 
                 # select the first audio stream that matches the users explict language selection
@@ -444,7 +460,9 @@ class HLSStream(HTTPStream):
                     preferred_audio.append(media)
 
             # final fallback on the first audio stream listed
-            fallback_audio = fallback_audio or (len(audio_streams) and audio_streams[0].uri and [audio_streams[0]])
+            fallback_audio = fallback_audio or (len(audio_streams) and
+                                                audio_streams[0].uri and [
+                                                    audio_streams[0]])
 
             if playlist.stream_info.resolution:
                 width, height = playlist.stream_info.resolution
@@ -475,7 +493,8 @@ class HLSStream(HTTPStream):
 
             if stream_name in streams:  # rename duplicate streams
                 stream_name = "{0}_alt".format(stream_name)
-                num_alts = len(list(filter(lambda n: n.startswith(stream_name), streams.keys())))
+                num_alts = len(list(
+                    filter(lambda n: n.startswith(stream_name), streams.keys())))
 
                 # We shouldn't need more than 2 alt streams
                 if num_alts >= 2:
@@ -495,7 +514,8 @@ class HLSStream(HTTPStream):
 
             if external_audio and FFMPEGMuxer.is_usable(session_):
                 external_audio_msg = u", ".join([
-                    u"(language={0}, name={1})".format(x.language, (x.name or "N/A"))
+                    u"(language={0}, name={1})".format(x.language,
+                                                      (x.name or "N/A"))
                     for x in external_audio
                 ])
                 log.debug(u"Using external audio tracks for stream {0} {1}".format(

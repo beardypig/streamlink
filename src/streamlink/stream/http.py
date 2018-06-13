@@ -1,9 +1,15 @@
+import copy
+
 import requests
 
 from streamlink.compat import getargspec
 from streamlink.exceptions import StreamError
 from streamlink.stream import Stream
 from streamlink.stream.wrappers import StreamIOThreadWrapper, StreamIOIterWrapper
+from streamlink.buffers import RingBuffer
+from streamlink.stream.segmented import SegmentGenerator, HTTPSegment, RangedHTTPSegment, \
+    HTTPSegmentProcessor
+from .stream import Stream
 
 
 def normalize_key(keyval):
@@ -17,6 +23,34 @@ def valid_args(args):
     argspec = getargspec(requests.Request.__init__)
 
     return dict(filter(lambda kv: kv[0] in argspec.args, args.items()))
+
+
+class RangeHTTPSegmentGenerator(SegmentGenerator):
+    def __init__(self, session, url, **request_args):
+        self.session = session
+        self.url = url
+        self.request_args = request_args
+
+    def supports_range(self):
+        request_args = copy.deepcopy(self.request_args)
+        _ = request_args.pop("method", None)
+        _ = request_args.pop("stream", None)
+        req = self.session.request(method="HEAD", url=self.url, **request_args)
+        return ("bytes" in req.headers.get("Accept-Ranges", ""),
+                int(req.headers.get("Content-length", 0)))
+
+    def _segments(self):
+        supports_range, length = self.supports_range()
+        RANGE_SIZE = 3 * 1024 * 1024  # 3 MB
+
+        if supports_range and length > 2 * RANGE_SIZE:
+            parts = int(length / RANGE_SIZE)
+            for i in range(0, parts):
+                yield RangedHTTPSegment(self.url, offset=i * RANGE_SIZE, length=RANGE_SIZE, **self.request_args)
+            if parts * RANGE_SIZE < length-1:
+                yield RangedHTTPSegment(self.url, offset=parts * RANGE_SIZE, **self.request_args)
+        else:
+            yield HTTPSegment(self.url, **self.request_args)
 
 
 class HTTPStream(Stream):
@@ -64,19 +98,11 @@ class HTTPStream(Stream):
                                 **valid_args(self.args)).prepare().url
 
     def open(self):
-        method = self.args.get("method", "GET")
-        timeout = self.session.options.get("http-timeout")
-        res = self.session.http.request(method=method,
-                                        stream=True,
-                                        exception=StreamError,
-                                        timeout=timeout,
-                                        **self.args)
-
-        fd = StreamIOIterWrapper(res.iter_content(8192))
-        if self.buffered:
-            fd = StreamIOThreadWrapper(self.session, fd, timeout=timeout)
-
-        return fd
+        generator = RangeHTTPSegmentGenerator(self.session.http, **self.args)
+        buffer = RingBuffer()
+        proc = HTTPSegmentProcessor(self.session.http, generator, buffer)
+        proc.start()
+        return proc
 
     def to_url(self):
         return self.url

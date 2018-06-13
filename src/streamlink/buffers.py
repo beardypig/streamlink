@@ -102,6 +102,8 @@ class RingBuffer(Buffer):
         return data
 
     def read(self, size=-1, block=True, timeout=None):
+        if size > 0:
+            size = min(size, self.buffer_size)  # don't read more than the max
         if block and not self.closed:
             self.event_used.wait(timeout)
 
@@ -110,6 +112,13 @@ class RingBuffer(Buffer):
                 raise IOError("Read timeout")
 
         return self._read(size)
+
+    def read_iter(self, size=-1, block=True, timeout=None):
+        chunk = self.read(size, block, timeout)
+        while chunk is not None:
+            yield chunk
+            chunk = self.read(size, block, timeout)
+
 
     def write(self, data):
         if self.closed:
