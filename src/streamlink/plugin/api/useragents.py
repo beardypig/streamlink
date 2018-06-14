@@ -1,7 +1,7 @@
 ANDROID = ("Mozilla/5.0 (Linux; Android 4.4.2; Nexus 4 Build/KOT49H) "
            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/34.0.1847.114 Mobile Safari/537.36")
 CHROME = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-          "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/55.0.2883.87 Safari/537.36")
+          "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/66.0.3359.181 Safari/537.36")
 CHROME_OS = ("Mozilla/5.0 (X11; CrOS armv7l 4537.56.0) "
              "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/30.0.1599.38 Safari/537.36")
 IE_11 = "Mozilla/5.0 (MSIE 10.0; Windows NT 6.1; Trident/5.0)"
