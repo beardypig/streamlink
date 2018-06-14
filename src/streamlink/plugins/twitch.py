@@ -192,16 +192,11 @@ class TwitchAPI(object):
     def call(self, path, format="json", schema=None, **extra_params):
         params = dict(as3="t", **extra_params)
 
+        url = "https://{0}.twitch.tv{1}".format(self.subdomain, path)
+
+        headers = {'Client-ID': TWITCH_CLIENT_ID}
         if self.oauth_token:
-            params["oauth_token"] = self.oauth_token
-
-        if len(format) > 0:
-            url = "https://{0}.twitch.tv{1}.{2}".format(self.subdomain, path, format)
-        else:
-            url = "https://{0}.twitch.tv{1}".format(self.subdomain, path)
-
-        headers = {'Accept': 'application/vnd.twitchtv.v{0}+json'.format(self.version),
-                   'Client-ID': TWITCH_CLIENT_ID}
+            headers["Authorization"] = "Bearer: {0}".format(self.oauth_token)
 
         res = http.get(url, params=params, headers=headers)
 
@@ -220,16 +215,16 @@ class TwitchAPI(object):
     # Public API calls
 
     def user(self, **params):
-        return self.call("/kraken/user", **params)
+        return self.call("/helix/user", **params)
 
     def users(self, **params):
-        return self.call("/kraken/users", **params)
+        return self.call("/helix/users", **params)
 
     def videos(self, video_id, **params):
-        return self.call("/kraken/videos/{0}".format(video_id), **params)
+        return self.call("/helix/videos", id=video_id, **params)
 
     def channel_info(self, channel, **params):
-        return self.call("/kraken/channels/{0}".format(channel), **params)
+        return self.call("/helix/channels/{0}".format(channel), **params)
 
     # Private API calls
 
@@ -345,8 +340,8 @@ class Twitch(Plugin):
         if not self._channel:
             if self.video_id:
                 cdata = self._channel_from_video_id(self.video_id)
-                self._channel = cdata["name"].lower()
-                self._channel_id = cdata["_id"]
+                self._channel = cdata["login"].lower()
+                self._channel_id = cdata["id"]
         return self._channel
 
     @channel.setter
@@ -361,26 +356,32 @@ class Twitch(Plugin):
             # If the channel name is set, use that to look up the ID
             if self._channel:
                 cdata = self._channel_from_login(self._channel)
-                self._channel_id = cdata["_id"]
+                self._channel_id = cdata["id"]
 
             # If the channel name is not set but the video ID is,
             # use that to look up both ID and name
             elif self.video_id:
                 cdata = self._channel_from_video_id(self.video_id)
                 self._channel = cdata["name"].lower()
-                self._channel_id = cdata["_id"]
+                self._channel_id = cdata["id"]
         return self._channel_id
 
     def _channel_from_video_id(self, video_id):
         vdata = self.api.videos(video_id)
-        if "channel" not in vdata:
+        if "data" not in vdata or len(vdata['data']) == 0:
             raise PluginError("Unable to find video: {0}".format(video_id))
-        return vdata["channel"]
+        cid =  vdata["data"][0]["id"]
+        cdata = self.api.users(id=cid)
+        if len(cdata["data"]):
+            return cdata["data"][0]
+        else:
+            raise PluginError("Unable to find channel for video: {0}".format(video_id))
+
 
     def _channel_from_login(self, channel):
         cdata = self.api.users(login=channel)
-        if len(cdata["users"]):
-            return cdata["users"][0]
+        if len(cdata["data"]):
+            return cdata["data"][0]
         else:
             raise PluginError("Unable to find channel: {0}".format(channel))
 
@@ -595,6 +596,7 @@ class Twitch(Plugin):
         elif stream_type == "video":
             sig, token = self._access_token(stream_type)
             url = self.usher.video(self.video_id, nauthsig=sig, nauth=token)
+            self.logger.debug("Found video stream URL: {0}".format(url))
         else:
             self.logger.debug("Unknown HLS stream type: {0}".format(stream_type))
             return {}
