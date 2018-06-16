@@ -1,3 +1,4 @@
+import threading
 from collections import deque
 from io import BytesIO
 from threading import Event, Lock
@@ -114,10 +115,9 @@ class RingBuffer(Buffer):
         return self._read(size)
 
     def read_iter(self, size=-1, block=True, timeout=None):
-        chunk = self.read(size, block, timeout)
-        while chunk is not None:
-            yield chunk
-            chunk = self.read(size, block, timeout)
+        while not self.closed:
+            yield self.read(size, block, timeout)
+        yield self.read(-1, block=False)
 
 
     def write(self, data):

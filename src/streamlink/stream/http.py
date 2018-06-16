@@ -39,16 +39,18 @@ class RangeHTTPSegmentGenerator(SegmentGenerator):
         return ("bytes" in req.headers.get("Accept-Ranges", ""),
                 int(req.headers.get("Content-length", 0)))
 
-    def _segments(self):
+    def __iter__(self):
         supports_range, length = self.supports_range()
-        RANGE_SIZE = 3 * 1024 * 1024  # 3 MB
+        range_size = 3 * 1024 * 1024
+        if length:
+            range_size = max(length / 10, range_size)  # ~10 parts (no smaller than 3MB)
 
-        if supports_range and length > 2 * RANGE_SIZE:
-            parts = int(length / RANGE_SIZE)
+        if supports_range and length > 2 * range_size:
+            parts = int(length / range_size)
             for i in range(0, parts):
-                yield RangedHTTPSegment(self.url, offset=i * RANGE_SIZE, length=RANGE_SIZE, **self.request_args)
-            if parts * RANGE_SIZE < length-1:
-                yield RangedHTTPSegment(self.url, offset=parts * RANGE_SIZE, **self.request_args)
+                yield RangedHTTPSegment(self.url, offset=i * range_size, length=range_size, **self.request_args)
+            if parts * range_size < length-1:
+                yield RangedHTTPSegment(self.url, offset=parts * range_size, **self.request_args)
         else:
             yield HTTPSegment(self.url, **self.request_args)
 
@@ -101,8 +103,7 @@ class HTTPStream(Stream):
         generator = RangeHTTPSegmentGenerator(self.session.http, **self.args)
         buffer = RingBuffer()
         proc = HTTPSegmentProcessor(self.session.http, generator, buffer)
-        proc.start()
-        return proc
+        return proc.open()
 
     def to_url(self):
         return self.url

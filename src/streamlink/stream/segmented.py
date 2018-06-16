@@ -1,16 +1,15 @@
-import io
+import concurrent.futures
 import logging
 import queue
 import time
-import concurrent.futures
 from concurrent import futures
 from threading import Thread, Lock, Event
 
 from streamlink.buffers import RingBuffer
-from streamlink.exceptions import StreamError
 from streamlink.stream.stream import StreamIO
 
 log = logging.getLogger(__name__)
+log.setLevel(logging.DEBUG)
 
 
 class SegmentedStreamWorker(Thread):
@@ -210,14 +209,11 @@ class SegmentedStreamReader(StreamIO):
                                 timeout=self.timeout)
 
 
-class Segment(object):
+class AutoIncrementSegment(object):
     __sequence_lock = Lock()
     __sequence_counter = None
 
     def __init__(self):
-        """
-
-        """
         self.sequence_number = self.next_sequence()
 
     @classmethod
@@ -228,6 +224,10 @@ class Segment(object):
             else:
                 cls.__sequence_counter = 0
             return cls.__sequence_counter
+
+
+class Segment(object):
+    pass
 
 
 class HTTPSegment(Segment):
@@ -347,14 +347,12 @@ class HTTPSegmentProcessor(Thread):
 
     The segments are streamed and decrypted on the fly, if required, and streamed
     out to a queue, where they are written to an output buffer.
-
-
     """
 
-    def __init__(self, session, segment_generator, buffer, **kwargs):
+    def __init__(self, http, segment_generator, buffer, **kwargs):
         super(HTTPSegmentProcessor, self).__init__(**kwargs)
         assert isinstance(buffer, RingBuffer)
-        self.session = session
+        self.http = http
         self.segment_generator = segment_generator
         self.buffer = buffer
 
@@ -368,74 +366,59 @@ class HTTPSegmentProcessor(Thread):
         self._filler = None
         self._data_queue = queue.Queue(maxsize=self.threads - 1)
         self._queue_lock = Lock()
+        self._started = Event()
 
     def run(self):
         # start thread to fill the executor pool
         self._filler = Thread(target=self.filler)
         self._filler.start()
+        self._started.set()
 
-        current_sequence_number = 0  # first segment is always 0
-        final_segment = False  # flag for when all segments have appeared
-
-        # the queue can be empty, but the final segment has not appeared
-        # the final segment can appear before the queue is empty
-        while not final_segment or not self._data_queue.empty():
-            # lock the queue to ensure that out-of-order items go back in the queue
-            self._queue_lock.acquire()
+        while True:
             try:
                 segment, buffer, future = self._data_queue.get(block=False)
             except queue.Empty:
-                self._queue_lock.release()
                 time.sleep(0.1)
                 continue
 
             if segment is None:
-                final_segment = True
-                continue
+                # completed all items in the queue
+                self.buffer.close()
+                return
 
-            if segment.sequence_number == current_sequence_number:
-                self._queue_lock.release()
-                print("#{} started...".format(current_sequence_number))
-
-                # copy from the segment buffer to the output buffer
-                for chunk in buffer.read_iter(size=16 * 1024):
-                    print("read {} bytes from segment".format(len(chunk)))
-                    self.buffer.write(chunk)
-                print("#{} complete".format(current_sequence_number))
-                current_sequence_number += 1  # next segment
-
-            else:
-                print("Got segment #{} waiting for {}".format(segment.sequence_number, current_sequence_number))
-                # put out of order sequence back in the queue
-                self._data_queue.put((segment, buffer, future))
-                self._queue_lock.release()
+            log.debug("Writing {0} to output buffer".format(segment.sequence_number))
+            # copy from the segment buffer to the output buffer
+            for chunk in buffer.read_iter(size=16 * 1024):
+                self.buffer.write(chunk)
 
     def filler(self):
         """
         Takes segments and puts them in the executor queue, and then adds the
         future to the data queue with the associated segment descriptor
         """
-        print("Started filler thread...")
+        log.debug("Started filler thread...")
         # fill thread queue
         for segment in self.segment_generator:
             if segment is not None:
                 buffer = RingBuffer(size=2 * 1024 * 1024)
                 future = self.fetch_executor.submit(self.fetcher, segment, buffer)
+                self.put((segment, buffer, future))
+                log.debug("enqued {}: {} {}".format(segment.sequence_number, segment.uri, segment.range()))
 
-                # Add the item to the queue, with a timeout and retry  - the timeout
-                # is required to avoid a deadlock with the lock in run() as put
-                # is a blocking call.
-                while True:
-                    try:
-                        with self._queue_lock:  # guard against blocking the queue in run()
-                            self._data_queue.put((segment, buffer, future),
-                                                 block=True, timeout=1.0)
-                            print("enqued {}: {} {}".format(segment.sequence_number, segment.uri, segment.range()))
-                            break  # successfully added the item to the queue
-                    except queue.Full:
-                        continue
-        with self._queue_lock:
-            self._data_queue.put((None, None, None))
+        self.put((None, None, None))
+        log.debug("enqued FINAL marker")
+
+    def put(self, item):
+        # Add the item to the queue, with a timeout and retry  - the timeout
+        # is required to avoid a deadlock with the lock in run() as put
+        # is a blocking call.
+        while True:
+            try:
+                self._data_queue.put(item, block=False)
+                return  # successfully added the item to the queue
+            except queue.Full:
+                time.sleep(1.0)
+                continue
 
     def open(self):
         """
@@ -445,15 +428,14 @@ class HTTPSegmentProcessor(Thread):
         :return:
         """
         self.start()
-        while self._filler is None or not self._filler.is_alive():
-            time.sleep(0.01)
+        self._started.wait()
         return self
 
     def read(self, size=8 * 1024):
         if not self.buffer or self._filler is None:
             return b""
 
-        return self.buffer.read(size, block=self._filler.is_alive(), timeout=self.timeout)
+        return self.buffer.read(size, timeout=self.timeout)
 
     def _get_range_header(self, segment, offset=0):
         """
@@ -481,10 +463,9 @@ class HTTPSegmentProcessor(Thread):
         :param segment: the segment descriptor
         :param buffer: output buffer for this segment
         """
-        max_chunk_size = buffer.buffer_size
-        for chunk in self.fetch(segment, chunk_size=min(max_chunk_size, 16 * 1024)):
-            print("fetched {} bytes".format(len(chunk)))
+        for chunk in self.fetch(segment, chunk_size=min(buffer.buffer_size, 16 * 1024)):
             buffer.write(chunk)
+        buffer.close()
 
     def fetch(self, segment, chunk_size=16 * 1024):
         """
@@ -497,7 +478,7 @@ class HTTPSegmentProcessor(Thread):
         :param chunk_size: size in bytes to yield
         :yield: data and segment number
         """
-        print("Starting fetch of #{}".format(segment.sequence_number))
+        log.debug("Starting fetch of #{}".format(segment.sequence_number))
 
         retries = self.retries
         offset = 0
@@ -512,15 +493,12 @@ class HTTPSegmentProcessor(Thread):
             range_offset, range_length = segment.range()
             range_offset += offset
             headers.update(self._get_range_header(segment, offset))
-
             try:
                 # TODO: ignore names needs to be handled before this, in the segment generator)
-                streamer = self.session.get(segment.uri,
-                                            timeout=1.0,    
-                                            raise_for_status=False,
-                                            stream=True,
-                                            headers=headers)
-                print(streamer.status_code)
+                streamer = self.http.get(segment.uri,
+                                         raise_for_status=False,
+                                         stream=True,
+                                         headers=headers)
                 # check that the request support range, and skip over the bytes
                 # that are outside the required range. this should always be in
                 # whole chunks as it is not possible to have differently sized
@@ -528,24 +506,29 @@ class HTTPSegmentProcessor(Thread):
                 # TODO:
                 # if "Range" in headers:
                 #     if streamer.status_code == 200:  # none-partial reply
-                #         print("Non-partial reply in Range query")
+                #         log.debug("Non-partial reply in Range query")
                 #         skipped = 0
                 #         for chunk in content:
                 #             skipped += len(chunk)
                 #             if skipped >= offset:
                 #                 break
-
+                if streamer.headers.get("Content-Length"):
+                    size = int(streamer.headers.get("Content-Length")) / 1024.0
+                else:
+                    size = "N/A"
+                log.debug("Starting download of segment {0} ({1:.2f} KB)".format(segment.sequence_number, size))
+                t = time.time()
                 for chunk in streamer.iter_content(chunk_size=chunk_size):
                     # TODO: decrypt this chunk
                     yield chunk
                     offset += len(chunk)  # update the offset
                     # TODO: for non-partial stop at the right place
-
+                log.debug("Completed download of segment {0} in {1:.1f}s".format(segment.sequence_number, time.time() - t))
                 return  # completed successfully
-            except StreamError as err:
+            except Exception as err:
                 # failed, need to retry build maintain the current offset
                 last_error = err
-                print(err)
+                log.debug(err)
 
         log.error("Failed to open segment {0}: {1}", segment.sequence_nuber,
                   last_error)
@@ -553,3 +536,7 @@ class HTTPSegmentProcessor(Thread):
 
     def close(self):
         self.buffer.close()
+
+        self.fetch_executor.shutdown(wait=False)
+        if concurrent.futures.thread._threads_queues:
+            concurrent.futures.thread._threads_queues.clear()
