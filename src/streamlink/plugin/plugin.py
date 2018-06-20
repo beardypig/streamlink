@@ -227,8 +227,8 @@ class Plugin(object):
         cls.options.set(key, value)
 
     @classmethod
-    def get_option(cls, key):
-        return cls.options.get(key)
+    def get_option(cls, key, default=None):
+        return cls.options.get(key, default=default)
 
     @classmethod
     def get_argument(cls, key):

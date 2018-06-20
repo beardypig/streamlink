@@ -3,6 +3,7 @@ import logging
 import queue
 import time
 from concurrent import futures
+from concurrent.futures import CancelledError
 from threading import Thread, Lock, Event
 
 from streamlink.buffers import RingBuffer
@@ -230,7 +231,7 @@ class Segment(object):
     pass
 
 
-class HTTPSegment(Segment):
+class HTTPSegment(Segment, AutoIncrementSegment):
     def __init__(self, uri, **request_params):
         """
         The definition of a segment
@@ -293,6 +294,7 @@ class RangedHTTPSegment(HTTPSegment):
         self.offset = offset
         self.length = length
 
+    @property
     def range(self):
         return self.offset, self.length
 
@@ -332,9 +334,27 @@ class SegmentGenerator(object):
     """
     Generate segments including sequence information
     """
+    def __init__(self):
+        self._closed = Event()
 
     def __iter__(self):
         yield
+
+    def wait(self, seconds):
+        """
+        Pauses the thread for a specified time.
+
+        Returns False if interrupted by another thread and True if the
+        time runs out normally.
+        """
+        return not self._closed.wait(seconds)
+
+    def close(self):
+        self._closed.set()
+
+    @property
+    def closed(self):
+        return self._closed.is_set()
 
 
 class SegmentError(Exception):
@@ -352,6 +372,7 @@ class HTTPSegmentProcessor(Thread):
     def __init__(self, http, segment_generator, buffer, **kwargs):
         super(HTTPSegmentProcessor, self).__init__(**kwargs)
         assert isinstance(buffer, RingBuffer)
+        self._closed = Event()
         self.http = http
         self.segment_generator = segment_generator
         self.buffer = buffer
@@ -368,17 +389,24 @@ class HTTPSegmentProcessor(Thread):
         self._queue_lock = Lock()
         self._started = Event()
 
+    @property
+    def closed(self):
+        return self._closed.is_set()
+
+    def wait(self, timeout):
+        return not self._closed.wait(timeout)
+
     def run(self):
         # start thread to fill the executor pool
         self._filler = Thread(target=self.filler)
         self._filler.start()
         self._started.set()
 
-        while True:
+        while not self.closed:
             try:
                 segment, buffer, future = self._data_queue.get(block=False)
             except queue.Empty:
-                time.sleep(0.1)
+                self.wait(0.1)
                 continue
 
             if segment is None:
@@ -387,9 +415,27 @@ class HTTPSegmentProcessor(Thread):
                 return
 
             log.debug("Writing {0} to output buffer".format(segment.sequence_number))
-            # copy from the segment buffer to the output buffer
-            for chunk in buffer.read_iter(size=16 * 1024):
-                self.buffer.write(chunk)
+            while not self.closed:
+                # copy from the segment buffer to the output buffer
+                try:
+                    while not buffer.closed:
+                        chunk = buffer.read(16 * 1024, True, 1.0)
+                        self.buffer.write(chunk)
+                        log.debug("Read {0} bytes from segment {1}".format(len(chunk), segment.sequence_number))
+                    self.buffer.write(buffer.read(-1, block=False))
+                    return
+                except IOError:
+                    try:
+                        exception = future.exception(0)
+                        if exception:
+                            log.error("Segment {0} failed with error: {1}".format(segment.sequence_number, exception))
+                            break
+                    except TimeoutError:
+                        continue
+                    except CancelledError:
+                        log.error("Download if {0} cancelled".format(segment.sequence_number))
+                        break
+
 
     def filler(self):
         """
@@ -399,11 +445,16 @@ class HTTPSegmentProcessor(Thread):
         log.debug("Started filler thread...")
         # fill thread queue
         for segment in self.segment_generator:
+            if self.closed:
+                return
             if segment is not None:
                 buffer = RingBuffer(size=2 * 1024 * 1024)
-                future = self.fetch_executor.submit(self.fetcher, segment, buffer)
-                self.put((segment, buffer, future))
-                log.debug("enqued {}: {} {}".format(segment.sequence_number, segment.uri, segment.range()))
+                try:
+                    future = self.fetch_executor.submit(self.fetcher, segment, buffer)
+                    self.put((segment, buffer, future))
+                    log.debug("enqued {}: {} {}".format(segment.sequence_number, segment.uri, segment.range))
+                except RuntimeError:
+                    return
 
         self.put((None, None, None))
         log.debug("enqued FINAL marker")
@@ -412,12 +463,12 @@ class HTTPSegmentProcessor(Thread):
         # Add the item to the queue, with a timeout and retry  - the timeout
         # is required to avoid a deadlock with the lock in run() as put
         # is a blocking call.
-        while True:
+        while not self.closed:
             try:
                 self._data_queue.put(item, block=False)
                 return  # successfully added the item to the queue
             except queue.Full:
-                time.sleep(1.0)
+                self.wait(1.0)
                 continue
 
     def open(self):
@@ -445,7 +496,7 @@ class HTTPSegmentProcessor(Thread):
         :return:
         """
         headers = {}
-        start, length = segment.range()
+        start, length = segment.range
         start += offset
         if length and offset:
             length = max(length - (offset - 1), 0)
@@ -490,8 +541,6 @@ class HTTPSegmentProcessor(Thread):
             # if the download fails mid-stream, and this is a retry, then add the
             # offset to the range header.
 
-            range_offset, range_length = segment.range()
-            range_offset += offset
             headers.update(self._get_range_header(segment, offset))
             try:
                 # TODO: ignore names needs to be handled before this, in the segment generator)
@@ -535,6 +584,8 @@ class HTTPSegmentProcessor(Thread):
         raise SegmentError("Failed to read segment", segment, last_error)
 
     def close(self):
+        self._closed.set()
+        self.segment_generator.close()
         self.buffer.close()
 
         self.fetch_executor.shutdown(wait=False)

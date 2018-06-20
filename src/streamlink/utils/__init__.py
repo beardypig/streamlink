@@ -3,6 +3,9 @@ import json
 import re
 import xml.etree.ElementTree as ET
 import zlib
+import collections
+import functools
+from threading import Event
 
 from streamlink.compat import urljoin, urlparse, parse_qsl, is_py2, is_py3
 from streamlink.exceptions import PluginError
@@ -148,6 +151,7 @@ def memoize(obj):
         if key not in cache:
             cache[key] = obj(*args, **kwargs)
         return cache[key]
+
     return memoizer
 
 

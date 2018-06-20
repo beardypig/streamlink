@@ -27,6 +27,7 @@ def valid_args(args):
 
 class RangeHTTPSegmentGenerator(SegmentGenerator):
     def __init__(self, session, url, **request_args):
+        SegmentGenerator.__init__(self)
         self.session = session
         self.url = url
         self.request_args = request_args
@@ -101,7 +102,7 @@ class HTTPStream(Stream):
 
     def open(self):
         generator = RangeHTTPSegmentGenerator(self.session.http, **self.args)
-        buffer = RingBuffer()
+        buffer = RingBuffer(self.session.get_option("ringbuffer-size"))
         proc = HTTPSegmentProcessor(self.session.http, generator, buffer)
         return proc.open()
 

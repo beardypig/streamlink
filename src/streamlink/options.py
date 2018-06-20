@@ -30,13 +30,21 @@ class Options(object):
             dest[_normalise_option_name(key)] = value
         return dest
 
+    def __getitem__(self, key):
+        key = _normalise_option_name(key)
+        return self.options[key]
+
+    def __setitem__(self, key, value):
+        self.set(key, value)
+
     def set(self, key, value):
         self.options[_normalise_option_name(key)] = value
 
-    def get(self, key):
-        key = _normalise_option_name(key)
-        if key in self.options:
-            return self.options[key]
+    def get(self, key, default=None):
+        try:
+            return self[key]
+        except KeyError:
+            return default
 
     def update(self, options):
         for key, value in options.items():

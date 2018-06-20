@@ -301,10 +301,11 @@ class Streamlink(object):
         else:
             self.options.set(key, value)
 
-    def get_option(self, key):
+    def get_option(self, key, default=None):
         """Returns current value of specified option.
 
         :param key: key of the option
+        :param default: default value if key is missing
 
         """
         # Backwards compatibility
@@ -334,7 +335,7 @@ class Streamlink(object):
         elif key == "http-timeout":
             return self.http.timeout
         else:
-            return self.options.get(key)
+            return self.options.get(key, default)
 
     def set_plugin_option(self, plugin, key, value):
         """Sets plugin specific options used by plugins originating
