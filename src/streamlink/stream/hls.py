@@ -262,7 +262,8 @@ class HLSStreamWorker(SegmentedStreamWorker):
         if first_sequence.segment.key and first_sequence.segment.key.method != "NONE":
             log.debug("Segments in this playlist are encrypted")
 
-        self.playlist_changed = ([s.num for s in self.playlist_sequences] != [s.num for s in sequences])
+        self.playlist_changed = ([s.num for s in self.playlist_sequences] !=
+                                 [s.num for s in sequences])
         self._set_playlist_reload_time(playlist, sequences)
         self.playlist_sequences = sequences
 
@@ -399,6 +400,8 @@ class HLSSegmentGenerator(SegmentGenerator):
             res = self.http.get(self.url,
                                 exception=StreamError,
                                 retries=self.playlist_reload_retries,
+                                # set the timeout to half the playlist reload time, but not less than 1 second
+                                timeout=max(1.0, self.playlist_reload_time/2.0),
                                 **self.request_params)
             try:
                 playlist = hls_playlist.load(res.text, res.url)
@@ -427,12 +430,14 @@ class HLSSegmentGenerator(SegmentGenerator):
 
         self.playlist_changed = ([s.num for s in self.playlist_sequences] !=
                                  [s.num for s in sequences])
-        self.playlist_reload_time = (playlist.target_duration or
-                                     last_sequence.segment.duration)
         self.playlist_sequences = sequences
 
         if not self.playlist_changed:
             self.playlist_reload_time = max(self.playlist_reload_time / 2, 1)
+        else:
+            self.playlist_reload_time = (playlist.target_duration or last_sequence.segment.duration) * self.live_edge * 0.8
+
+        log.debug("Updated playlist refresh time to {0}s".format(self.playlist_reload_time))
 
         if playlist.is_endlist:
             self.playlist_end = last_sequence.num

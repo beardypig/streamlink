@@ -5,6 +5,7 @@ import xml.etree.ElementTree as ET
 import zlib
 import collections
 import functools
+from textwrap import TextWrapper
 from threading import Event
 
 from streamlink.compat import urljoin, urlparse, parse_qsl, is_py2, is_py3

@@ -11,6 +11,7 @@ is_win32 = os.name == "nt"
 try:
     from subprocess import DEVNULL
 
+
     def devnull():
         return DEVNULL
 except ImportError:
@@ -21,7 +22,7 @@ if is_py2:
     _str = str
     str = unicode
     range = xrange
-    from itertools import izip
+
 
     def bytes(b, enc="ascii"):
         return _str(b)

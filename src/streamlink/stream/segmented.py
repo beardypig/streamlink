@@ -2,15 +2,29 @@ import concurrent.futures
 import logging
 import queue
 import time
+from collections import deque
 from concurrent import futures
 from concurrent.futures import CancelledError
 from threading import Thread, Lock, Event
 
-from streamlink.buffers import RingBuffer
+from Crypto.Cipher import AES
+
+from streamlink.buffers import RingBuffer, Buffer
 from streamlink.stream.stream import StreamIO
 
 log = logging.getLogger(__name__)
 log.setLevel(logging.DEBUG)
+
+
+def shorten(text, width):
+    text = text.strip()
+    if len(text) > width:
+        width_h = max((width - 2) // 2, 1)
+        x = text[:width_h]
+        y = text[-width_h:]
+        return "{0}..{1}".format(x.strip(), y.strip())
+    else:
+        return text
 
 
 class SegmentedStreamWorker(Thread):
@@ -107,9 +121,9 @@ class SegmentedStreamWriter(Thread):
 
         self.closed = True
         self.reader.buffer.close()
-        self.executor.shutdown(wait=False)
         if concurrent.futures.thread._threads_queues:
             concurrent.futures.thread._threads_queues.clear()
+        self.executor.shutdown(wait=False)
 
     def put(self, segment):
         """Adds a segment to the download pool and write queue."""
@@ -299,13 +313,29 @@ class RangedHTTPSegment(HTTPSegment):
         return self.offset, self.length
 
 
-class IEncryptedSegment(object):  # TODO: how to provide the key, iv, and algorithm
-    def __init__(self, algorithm, parameters):
-        """
-        """
-        self.algorithm = algorithm
-        self.parameters = parameters
+class SegmentDecryptionError(Exception):
+    """
+    Error occurred while decrypting
+    """
+    pass
+
+
+class AESEncryptedHTTPSegment(HTTPSegment):
+    """
+    An encrypted HTTP Segment, range requests will not be possible
+    """
+    def __init__(self, uri, key, iv, **request_params):
+        super(AESEncryptedHTTPSegment, self).__init__(uri,
+                                                      **request_params)
+        # TODO: test correctness of key + IV
+        self.key = key
+        self.iv = iv
         self._decrptor = self.create_decryptor()
+        self._buffer = b""
+
+    @property
+    def key_size(self):
+        return len(self.key)
 
     def decrypt(self, block):
         """
@@ -313,21 +343,29 @@ class IEncryptedSegment(object):  # TODO: how to provide the key, iv, and algori
         :param block:
         :return:
         """
-        return block
+        aligned_size = (len(block) // self.key_size) * self.key_size
+        eblock = self._buffer + block
+        cipher_text, self._buffer = eblock[aligned_size:], eblock[aligned_size:]
+        return self._decrptor.decrypt(cipher_text)
 
     def finalise(self):
         """
         Finalise any decrpytion for block ciphers.
         :return:
         """
-        return b""
+        if len(self._buffer) % self.key_size:
+            raise SegmentDecryptionError("block size misaligned")
+        elif len(self._buffer) > 0:
+            return self._decrptor.decrypt(self._buffer)
+        else:
+            return b""
 
     def create_decryptor(self):
         """
         If the segment is encrypted then create a decrpytor to decrypt it
         :return:
         """
-        return None
+        return AES.new(self.key, AES.MODE_CBC, self.iv)
 
 
 class SegmentGenerator(object):
@@ -418,12 +456,10 @@ class HTTPSegmentProcessor(Thread):
             while not self.closed:
                 # copy from the segment buffer to the output buffer
                 try:
-                    while not buffer.closed:
-                        chunk = buffer.read(16 * 1024, True, 1.0)
+                    for chunk in buffer.read_iter(16 * 1024):
                         self.buffer.write(chunk)
-                        log.debug("Read {0} bytes from segment {1}".format(len(chunk), segment.sequence_number))
-                    self.buffer.write(buffer.read(-1, block=False))
-                    return
+                    log.debug("Segment {0} written to output buffer".format(segment.sequence_number))
+                    break
                 except IOError:
                     try:
                         exception = future.exception(0)
@@ -444,6 +480,7 @@ class HTTPSegmentProcessor(Thread):
         """
         log.debug("Started filler thread...")
         # fill thread queue
+        # TODO: segments should be added to a queue in the a separate thread so that HLS reloads, etc are not blocked.
         for segment in self.segment_generator:
             if self.closed:
                 return
@@ -452,7 +489,7 @@ class HTTPSegmentProcessor(Thread):
                 try:
                     future = self.fetch_executor.submit(self.fetcher, segment, buffer)
                     self.put((segment, buffer, future))
-                    log.debug("enqued {}: {} {}".format(segment.sequence_number, segment.uri, segment.range))
+                    log.debug("enqued {}: {} {}".format(segment.sequence_number, shorten(segment.uri, width=70), segment.range))
                 except RuntimeError:
                     return
 

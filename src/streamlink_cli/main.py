@@ -465,37 +465,26 @@ def fetch_streams(plugin):
                           sorting_excludes=args.stream_sorting_excludes)
 
 
-def fetch_streams_with_retry(plugin, interval, count):
-    """Attempts to fetch streams repeatedly
-       until some are returned or limit hit."""
+def fetch_streams_with_retry(plugin, interval=1.0, count=0):
+    """
+        Attempts to fetch streams repeatedly
+        until some are returned or limit hit.
+    """
+    attempts = 1
 
-    try:
-        streams = fetch_streams(plugin)
-    except PluginError as err:
-        log.error(u"{0}".format(err))
-        streams = None
-
-    if not streams:
-        log.info("Waiting for streams, retrying every {0} "
-                 "second(s)".format(interval))
-    attempts = 0
-
-    while not streams:
-        sleep(interval)
-
+    while count == 0 or attempts <= count:
         try:
-            streams = fetch_streams(plugin)
+            return plugin.get_streams(stream_types=args.stream_types,
+                                      sorting_excludes=args.stream_sorting_excludes)
         except FatalPluginError:
             raise
         except PluginError as err:
-            log.error(u"{0}".format(err))
+            if attempts == 1:
+                log.info("Waiting for streams, retrying every {0} second(s)".format(interval))
+            log.error(u"{0}", err)
 
-        if count > 0:
-            attempts += 1
-            if attempts >= count:
-                break
-
-    return streams
+        attempts += 1
+        sleep(interval)
 
 
 def resolve_stream_name(streams, stream_name):
