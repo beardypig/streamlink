@@ -18,7 +18,8 @@ from streamlink.stream.segmented import (SegmentedStreamReader,
                                          SegmentGenerator,
                                          HTTPSegmentProcessor,
                                          HTTPSegment,
-                                         RangedHTTPSegment)
+                                         RangedHTTPSegment,
+                                         AESEncryptedHTTPSegment)
 
 log = logging.getLogger(__name__)
 Sequence = namedtuple("Sequence", "num segment")
@@ -117,7 +118,6 @@ class HLSStreamWriter(SegmentedStreamWriter):
         request_params["headers"] = headers
 
         return request_params
-
 
     def fetch(self, sequence, retries=None):
         if self.closed or not retries:
@@ -341,7 +341,6 @@ class HLSStreamReader(SegmentedStreamReader):
         self.request_params.pop("url", None)
 
 
-
 class HLSSegmentGenerator(SegmentGenerator):
     def __init__(self, http, url, live_edge=None, start_offset=0, duration=None, reload_attempts=1, live_restart=False,
                  ignore_names=None, **request_params):
@@ -363,6 +362,8 @@ class HLSSegmentGenerator(SegmentGenerator):
         self.live_restart = live_restart
         self.ignore_names = ignore_names
         self.request_params = request_params
+        self.key_uri = None
+        self.key_data = b""
 
         if self.ignore_names:
             # creates a regex from a list of segment names,
@@ -401,7 +402,7 @@ class HLSSegmentGenerator(SegmentGenerator):
                                 exception=StreamError,
                                 retries=self.playlist_reload_retries,
                                 # set the timeout to half the playlist reload time, but not less than 1 second
-                                timeout=max(1.0, self.playlist_reload_time/2.0),
+                                timeout=max(1.0, self.playlist_reload_time / 2.0),
                                 **self.request_params)
             try:
                 playlist = hls_playlist.load(res.text, res.url)
@@ -479,7 +480,32 @@ class HLSSegmentGenerator(SegmentGenerator):
                     log.debug("Skipping segment {0}".format(sequence.num))
                     continue
 
-                if sequence.segment.byterange:
+                key = sequence.segment.key
+
+                if key and key.method != "NONE":
+                    if key.method != "AES-128":
+                        raise StreamError("Unable to decrypt cipher {0}", key.method)
+
+                    if not key.uri:
+                        raise StreamError("Missing URI to decryption key")
+
+                    if self.key_uri != key.uri:
+                        res = self.http.get(key.uri, exception=StreamError,
+                                            retries=self.playlist_reload_retries,
+                                            **self.request_params)
+                        self.key_data = res.content
+                        self.key_uri = key.uri
+
+                    iv = key.iv or num_to_iv(sequence.num)
+
+                    # Pad IV if needed
+                    iv = b"\x00" * (16 - len(iv)) + iv
+
+                    yield AESEncryptedHTTPSegment(sequence.segment.uri,
+                                                  self.key_data, iv,
+                                                  **self.request_params)
+
+                elif sequence.segment.byterange:
                     yield RangedHTTPSegment(sequence.segment.uri,
                                             offset=sequence.segment.byterange.offset,
                                             length=sequence.segment.byterange.range,

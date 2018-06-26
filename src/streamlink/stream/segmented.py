@@ -296,6 +296,22 @@ class HTTPSegment(Segment, AutoIncrementSegment):
         """
         return False
 
+    def decrypt(self, block):
+        """
+        Decrypts a block of data
+        :param block:
+        :return:
+        """
+        return block
+
+    def finalise(self):
+        """
+        Finalise any decrpytion for block ciphers.
+        :return:
+        """
+        pass
+
+
 
 class RangedHTTPSegment(HTTPSegment):
     """
@@ -366,6 +382,10 @@ class AESEncryptedHTTPSegment(HTTPSegment):
         :return:
         """
         return AES.new(self.key, AES.MODE_CBC, self.iv)
+
+    @property
+    def encrypted(self):
+        return True
 
 
 class SegmentGenerator(object):
@@ -571,7 +591,6 @@ class HTTPSegmentProcessor(Thread):
         retries = self.retries
         offset = 0
         last_error = None
-        # TODO: decryption
         headers = {}
 
         for _ in range(retries):
@@ -605,8 +624,10 @@ class HTTPSegmentProcessor(Thread):
                 log.debug("Starting download of segment {0} ({1:.2f} KB)".format(segment.sequence_number, size))
                 t = time.time()
                 for chunk in streamer.iter_content(chunk_size=chunk_size):
-                    # TODO: decrypt this chunk
-                    yield chunk
+                    if segment.encrypted:
+                        yield segment.decrypt(chunk)
+                    else:
+                        yield chunk
                     offset += len(chunk)  # update the offset
                     # TODO: for non-partial stop at the right place
                 log.debug("Completed download of segment {0} in {1:.1f}s".format(segment.sequence_number, time.time() - t))
