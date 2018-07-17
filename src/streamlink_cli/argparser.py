@@ -756,6 +756,18 @@ def build_parser():
         exists.
         """)
     transport.add_argument(
+        "--hls-subtitles",
+        action="store_true",
+        default=False,
+        help="""
+        Include subtitle streams from HLS streams in the output.
+
+        Note: This option will change the output format from MPEG-TS to Matroska,
+        it also requires a modern version of ffmpeg to work correctly.
+
+        Default is False.
+        """)
+    transport.add_argument(
         "--hls-timeout",
         type=num(float, min=0),
         metavar="TIMEOUT",
@@ -991,6 +1003,13 @@ def build_parser():
         Default is "copy".
 
         Example: "aac"
+        """
+    )
+    transport.add_argument(
+        "--ffmpeg-strict",
+        metavar="STRICT",
+        help="""
+        Advanced usage for setting the -strict option in ffmpeg.
         """
     )
 

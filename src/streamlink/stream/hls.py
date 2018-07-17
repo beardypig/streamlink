@@ -293,20 +293,38 @@ class HLSStreamReader(SegmentedStreamReader):
 class MuxedHLSStream(MuxedStream):
     __shortname__ = "hls-multi"
 
-    def __init__(self, session, video, audio, force_restart=False, ffmpeg_options=None, **args):
-        tracks = [video]
-        maps = ["0:v?", "0:a?"]
-        if audio:
-            if isinstance(audio, list):
-                tracks.extend(audio)
-            else:
-                tracks.append(audio)
-        for i in range(1, len(tracks)):
-            maps.append("{0}:a".format(i))
-        substreams = map(lambda url: HLSStream(session, url, force_restart=force_restart, **args), tracks)
+    def __init__(self, session, video, audio, subtitles=None, force_restart=False, ffmpeg_options=None, **args):
+        video_tracks = [video]
+        audio_tracks = []
+        subtitle_tracks = []
         ffmpeg_options = ffmpeg_options or {}
+        metadata = ffmpeg_options.get("metadata", {})
+        vformat = "mpegts"
+        maps = ["0:v?", "0:a?"]  # always include the streams from the video track (where available)
 
-        super(MuxedHLSStream, self).__init__(session, *substreams, format="mpegts", maps=maps, **ffmpeg_options)
+        if audio:
+            audio_tracks = audio if isinstance(audio, list) else [audio]
+
+        for i, audio_url in enumerate(audio_tracks, len(video_tracks)):
+            smap = "{0}:a".format(i)
+            maps.append(smap)
+
+        for i, subtitle in enumerate(subtitles.items()):
+            language, subtitle_url = subtitle
+            smap = "{0}:s".format(i + len(video_tracks) + len(audio_tracks))
+            maps.append(smap)
+            metadata["s:s:{0}".format(i)] = ["language={0}".format(language)]
+            subtitle_tracks.append(subtitle_url)
+            ffmpeg_options["scodec"] = "ass"
+            ffmpeg_options["bsfa"] = ["aac_adtstoasc"]
+            vformat = "matroska"
+
+        tracks = video_tracks + audio_tracks + subtitle_tracks
+
+        substreams = map(lambda url: HLSStream(session, url, force_restart=force_restart, **args), tracks)
+        ffmpeg_options["metadata"] = metadata
+
+        super(MuxedHLSStream, self).__init__(session, *substreams, format=vformat, maps=maps, **ffmpeg_options)
 
 
 class HLSStream(HTTPStream):
@@ -371,6 +389,7 @@ class HLSStream(HTTPStream):
         name_key = request_params.pop("namekey", name_key)
         name_prefix = request_params.pop("nameprefix", name_prefix)
         audio_select = session_.options.get("hls-audio-select") or []
+        mux_subtitles = session_.options.get("hls-subtitles") or []
 
         res = session_.http.get(url, exception=IOError, **request_params)
 
@@ -386,11 +405,14 @@ class HLSStream(HTTPStream):
             fallback_audio = []
             default_audio = []
             preferred_audio = []
+            subtitle_streams = []
             for media in playlist.media:
                 if media.type == "VIDEO" and media.name:
                     names["name"] = media.name
                 elif media.type == "AUDIO":
                     audio_streams.append(media)
+                elif media.type == "SUBTITLES" and mux_subtitles:
+                    subtitle_streams.append(media)
             for media in audio_streams:
                 # Media without a uri is not relevant as external audio
                 if not media.uri:
@@ -452,19 +474,22 @@ class HLSStream(HTTPStream):
                 except Exception:
                     continue
 
-            external_audio = preferred_audio or default_audio or fallback_audio
+            external_audio = preferred_audio or default_audio or fallback_audio or []
 
-            if external_audio and FFMPEGMuxer.is_usable(session_):
-                external_audio_msg = ", ".join([
-                    "(language={0}, name={1})".format(x.language, (x.name or "N/A"))
-                    for x in external_audio
+            uses_external = bool(external_audio or subtitle_streams)
+
+            if uses_external and FFMPEGMuxer.is_usable(session_):
+                external_track_msg = ", ".join([
+                    "{0}:(language={1}, name={2})".format(x.type, x.language, (x.name or "N/A"))
+                    for x in external_audio + subtitle_streams
                 ])
-                log.debug("Using external audio tracks for stream {0} {1}", name_prefix + stream_name,
-                          external_audio_msg)
+                log.debug("Using external tracks for stream {0} {1}", name_prefix + stream_name,
+                          external_track_msg)
 
                 stream = MuxedHLSStream(session_,
                                         video=playlist.uri,
                                         audio=[x.uri for x in external_audio if x.uri],
+                                        subtitles=dict((s.language, s.uri) for s in subtitle_streams if s.uri),
                                         force_restart=force_restart,
                                         start_offset=start_offset,
                                         duration=duration,

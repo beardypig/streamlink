@@ -802,6 +802,9 @@ def setup_options():
     if args.hls_live_restart:
         streamlink.set_option("hls-live-restart", args.hls_live_restart)
 
+    if args.hls_subtitles:
+        streamlink.set_option("hls-subtitles", args.hls_subtitles)
+
     if args.hds_live_edge:
         streamlink.set_option("hds-live-edge", args.hds_live_edge)
 
@@ -854,6 +857,8 @@ def setup_options():
         streamlink.set_option("ffmpeg-video-transcode", args.ffmpeg_video_transcode)
     if args.ffmpeg_audio_transcode:
         streamlink.set_option("ffmpeg-audio-transcode", args.ffmpeg_audio_transcode)
+    if args.ffmpeg_strict:
+        streamlink.set_option("ffmpeg-strict", args.ffmpeg_strict)
 
     streamlink.set_option("subprocess-errorlog", args.subprocess_errorlog)
     streamlink.set_option("subprocess-errorlog-path", args.subprocess_errorlog_path)

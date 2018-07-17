@@ -96,16 +96,28 @@ class FFMPEGMuxer(StreamIO):
         outpath = options.pop("outpath", "pipe:1")
         videocodec = session.options.get("ffmpeg-video-transcode") or options.pop("vcodec", "copy")
         audiocodec = session.options.get("ffmpeg-audio-transcode") or options.pop("acodec", "copy")
+        strict = session.options.get("ffmpeg-strict") or options.pop("strict", None)
+        subscodec = options.pop("scodec", "copy")
         metadata = options.pop("metadata", {})
         maps = options.pop("maps", [])
         copyts = options.pop("copyts", False)
+        bsfv = options.pop("bsfv", [])
+        bsfa = options.pop("bsfa", [])
 
         self._cmd = [self.command(session), '-nostats', '-y']
         for np in self.pipes:
             self._cmd.extend(["-i", np.path])
 
+        if strict:
+            self._cmd.extend(['-strict', strict])
+
         self._cmd.extend(['-c:v', videocodec])
         self._cmd.extend(['-c:a', audiocodec])
+        self._cmd.extend(['-c:s', subscodec])
+        if bsfv:
+            self._cmd.extend(['-bsf:v', ",".join(bsfv)])
+        if bsfa:
+            self._cmd.extend(['-bsf:a', ",".join(bsfa)])
 
         for m in maps:
             self._cmd.extend(["-map", str(m)])
