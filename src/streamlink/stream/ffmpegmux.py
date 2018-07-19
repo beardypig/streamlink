@@ -71,6 +71,10 @@ class FFMPEGMuxer(StreamIO):
                     break
             except IOError:
                 log.error("Pipe copy aborted: {0}".format(pipe.path))
+                try:
+                    pipe.close()
+                except IOError:
+                    pass
                 return
         try:
             pipe.close()
@@ -167,18 +171,26 @@ class FFMPEGMuxer(StreamIO):
         return data
 
     def close(self):
-        log.debug("Closing ffmpeg thread")
         if self.process:
-            # kill ffmpeg
-            self.process.kill()
-            self.process.stdout.close()
+            self.process.poll()
+            if self.process.returncode is None:
+                log.debug("Closing ffmpeg thread")
+                # kill ffmpeg
+                self.process.kill()
+                self.process.stdout.close()
 
-            # close the streams
-            for stream in self.streams:
-                if hasattr(stream, "close"):
-                    stream.close()
+                # close the streams
+                for stream in self.streams:
+                    if hasattr(stream, "close"):
+                        stream.close()
 
-            log.debug("Closed all the substreams")
-        if self.close_errorlog:
-            self.errorlog.close()
-            self.errorlog = None
+                log.debug("Closed all the substreams")
+
+            if self.process.returncode:
+                log.error("FFmpeg exited with error code: {0}. Use --ffmpeg-verbose to see the full log from ffmpeg.".format(self.process.returncode))
+
+            if self.close_errorlog:
+                self.errorlog.close()
+                self.errorlog = None
+
+            self.process = None

@@ -319,9 +319,10 @@ class MuxedHLSStream(MuxedStream):
             ffmpeg_options["bsfa"] = ["aac_adtstoasc"]
             vformat = "matroska"
 
-        tracks = video_tracks + audio_tracks + subtitle_tracks
+        tracks = video_tracks + audio_tracks
 
-        substreams = map(lambda url: HLSStream(session, url, force_restart=force_restart, **args), tracks)
+        substreams = [HLSStream(session, url, force_restart=force_restart, **args) for url in tracks]
+        substreams.extend([VTTHLSStream(session, url, force_restart=force_restart, **args) for url in subtitle_tracks])
         ffmpeg_options["metadata"] = metadata
 
         super(MuxedHLSStream, self).__init__(session, *substreams, format=vformat, maps=maps, **ffmpeg_options)
