@@ -27,11 +27,11 @@ Start = namedtuple("Start", "time_offset precise")
 
 # EXT-X-STREAM-INF
 StreamInfo = namedtuple("StreamInfo", "bandwidth program_id codecs resolution "
-                                      "audio video subtitles")
+                                      "audio video subtitles uri")
 
 # EXT-X-I-FRAME-STREAM-INF
 IFrameStreamInfo = namedtuple("IFrameStreamInfo", "bandwidth program_id "
-                                                  "codecs resolution video")
+                                                  "codecs resolution video uri")
 
 Playlist = namedtuple("Playlist", "uri stream_info media is_iframe")
 Resolution = namedtuple("Resolution", "width height")
@@ -84,11 +84,11 @@ class M3U8Parser(object):
 
         if cls == IFrameStreamInfo:
             return IFrameStreamInfo(bandwidth, program_id, codecs, resolution,
-                                    streaminf.get("VIDEO"))
+                                    streaminf.get("VIDEO"), streaminf.get("URI"))
         else:
             return StreamInfo(bandwidth, program_id, codecs, resolution,
                               streaminf.get("AUDIO"), streaminf.get("VIDEO"),
-                              streaminf.get("SUBTITLES"))
+                              streaminf.get("SUBTITLES"), streaminf.get("URI"))
 
     def split_tag(self, line):
         match = re.match("#(?P<tag>[\w-]+)(:(?P<value>.+))?", line)
@@ -193,8 +193,14 @@ class M3U8Parser(object):
         elif line.startswith("#EXT-X-ALLOW-CACHE"):
             self.m3u8.allow_cache = self.parse_tag(line, self.parse_bool)
         elif line.startswith("#EXT-X-STREAM-INF"):
-            self.state["streaminf"] = self.parse_tag(line, self.parse_attributes)
-            self.state["expect_playlist"] = True
+            streaminf = self.parse_tag(line, self.parse_attributes)
+            if "URI" in streaminf:
+                stream_info = self.create_stream_info(streaminf)
+                playlist = Playlist(stream_info.uri, stream_info, [], False)
+                self.m3u8.playlists.append(playlist)
+            else:
+                self.state["streaminf"] = streaminf
+                self.state["expect_playlist"] = True
         elif line.startswith("#EXT-X-PLAYLIST-TYPE"):
             self.m3u8.playlist_type = self.parse_tag(line)
         elif line.startswith("#EXT-X-ENDLIST"):
