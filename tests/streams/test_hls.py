@@ -123,6 +123,82 @@ class TestHLS(unittest.TestCase):
         self.assertEqual(streamlinkResult, expectedResult)
 
 
+class TestHlsDiscontinuity(unittest.TestCase):
+    discontinuity = "#EXT-X-DISCONTINUITY\n"
+
+    def getMasterPlaylist(self):
+        with text("hls/test_master.m3u8") as pl:
+            return pl.read()
+
+    def getPlaylist(self, media_sequence, items):
+        header = """
+#EXTM3U
+#EXT-X-VERSION:5
+#EXT-X-TARGETDURATION:1
+#EXT-X-MEDIA-SEQUENCE:{0}
+""".format(media_sequence)
+
+        playlist = ""
+        for item in items:
+            if item == self.discontinuity:
+                playlist += self.discontinuity
+            else:
+                playlist += "#EXTINF:1.000,\nstream{0}.ts\n".format(item)
+
+        return header + playlist
+
+    def start_streamlink(self, kwargs=None):
+        kwargs = kwargs or {}
+        log.info("Executing streamlink")
+        streamlink = Streamlink()
+
+        streamlink.set_option("hls-live-edge", 4)
+        streamlink.set_option("hls-segment-skip-discontinuity", True)
+
+        masterStream = hls.HLSStream.parse_variant_playlist(streamlink, "http://mocked/path/master.m3u8", **kwargs)
+        stream = masterStream["1080p (source)"].open()
+        data = b"".join(iter(partial(stream.read, 8192), b""))
+        stream.close()
+        log.info("End of streamlink execution")
+        return data
+
+    def test_hls_discontinuity(self):
+        streams = ["[{0}]".format(i).encode("ascii") for i in range(12)]
+        playlists = [
+            self.getPlaylist(0, [0, 1, 2, 3]),
+            self.getPlaylist(4, [self.discontinuity, 4, 5, 6, 7]),
+            self.getPlaylist(8, [8, 9, 10, 11]) + "#EXT-X-ENDLIST\n"
+        ]
+        with requests_mock.Mocker() as mock:
+            mock.get("http://mocked/path/master.m3u8", text=self.getMasterPlaylist())
+            mock.get("http://mocked/path/playlist.m3u8", [{"text": playlist} for playlist in playlists])
+            for i, stream in enumerate(streams):
+                mock.get("http://mocked/path/stream{0}.ts".format(i), content=stream)
+            result = self.start_streamlink()
+
+        expected = b''.join(streams[0:4])
+        self.assertEqual(expected, result)
+
+    def test_hls_discontinuity_in_between(self):
+        streams = ["[{0}]".format(i).encode("ascii") for i in range(20)]
+        playlists = [
+            self.getPlaylist(0, [0, 1, 2, 3]),
+            self.getPlaylist(4, [4, 5, self.discontinuity, 6, 7]),
+            self.getPlaylist(8, [8, 9, 10, 11]),
+            self.getPlaylist(12, [12, 13, self.discontinuity, 14, 15]),
+            self.getPlaylist(16, [16, 17, 18, 19]) + "#EXT-X-ENDLIST\n"
+        ]
+        with requests_mock.Mocker() as mock:
+            mock.get("http://mocked/path/master.m3u8", text=self.getMasterPlaylist())
+            mock.get("http://mocked/path/playlist.m3u8", [{"text": playlist} for playlist in playlists])
+            for i, stream in enumerate(streams):
+                mock.get("http://mocked/path/stream{0}.ts".format(i), content=stream)
+            result = self.start_streamlink()
+
+        expected = b''.join(streams[0:6]) + b''.join(streams[14:20])
+        self.assertEqual(expected, result)
+
+
 @patch('streamlink.stream.hls.FFMPEGMuxer.is_usable', Mock(return_value=True))
 class TestHlsExtAudio(unittest.TestCase):
     @property
