@@ -5,9 +5,7 @@ from string import printable
 from textwrap import dedent
 
 from streamlink import logger
-from streamlink.utils.args import (
-    boolean, comma_list, comma_list_filter, filesize, keyvalue, num
-)
+from streamlink.utils.args import *
 from streamlink.utils.times import hours_minutes_seconds
 from .constants import (
     LIVESTREAMER_VERSION, STREAM_PASSTHROUGH, DEFAULT_PLAYER_ARGUMENTS, DEFAULT_STREAM_METADATA, SUPPORTED_PLAYERS
@@ -1104,6 +1102,14 @@ def build_parser():
         A header to add to each HTTP request.
 
         Can be repeated to add multiple headers.
+        """
+    )
+    http.add_argument(
+        "--http-user-agent",
+        metavar="SHORTCODE",
+        type=useragent,
+        help="""
+        Sets the User-Agent header to one of the predefined user agents.
         """
     )
     http.add_argument(

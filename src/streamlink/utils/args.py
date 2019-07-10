@@ -1,6 +1,8 @@
 import argparse
 import re
 
+from streamlink.plugin.api import useragents
+
 _filesize_re = re.compile(r'''
     (?P<size>\d+(\.\d+)?)
     (?P<modifier>[Kk]|[Mm])?
@@ -82,7 +84,17 @@ def num(type, min=None, max=None):
     return func
 
 
+def useragent(value):
+    normalised = value.upper().replace("-", "_")
+    agent = useragents.agents.get(normalised)
+
+    if agent is None:
+        raise argparse.ArgumentTypeError('{0} was not one of {1}'.format(value, ", ".join(useragents.agents_keys)))
+
+    return value
+
+
 __all__ = [
     'boolean', 'comma_list', 'comma_list_filter', 'filesize', 'keyvalue',
-    'num'
+    'num', 'useragent'
 ]

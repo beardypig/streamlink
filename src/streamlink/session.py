@@ -9,6 +9,7 @@ import requests
 from collections import OrderedDict
 
 from streamlink.logger import StreamlinkLogger, Logger
+from streamlink.plugin.api import useragents
 from streamlink.utils import update_scheme, memoize
 from streamlink.utils.l10n import Localization
 from . import plugins, __version__
@@ -291,6 +292,8 @@ class Streamlink(object):
             self.http.cert = value
         elif key == "http-timeout":
             self.http.timeout = value
+        elif key == "http-user-agent":
+            self.http.headers.update({"User-Agent": value})
         else:
             self.options.set(key, value)
 

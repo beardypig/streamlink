@@ -6,11 +6,11 @@ CHROME_OS = ("Mozilla/5.0 (X11; CrOS armv7l 10718.34.0) "
 EDGE = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/64.0.3282.140 Safari/537.36 Edge/18.17763"
 FIREFOX = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:64.0) Gecko/20100101 Firefox/64.0"
 FIREFOX_MAC = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.13; rv:64.0) Gecko/20100101 Firefox/64.0"
-IE_6 = "Mozilla/4.0 (compatible; MSIE 6.0; Windows NT 5.0; WOW64; Trident/4.0; SLCC1)"
-IE_7 = "Mozilla/4.0 (compatible; MSIE 7.0; Windows NT 6.0; WOW64; Trident/4.0; SLCC1)"
-IE_8 = "Mozilla/4.0 (compatible; MSIE 8.0; Windows NT 6.0; WOW64; Trident/4.0; SLCC1)"
-IE_9 = "Mozilla/5.0 (MSIE 9.0; Windows NT 6.1; Trident/5.0)"
-IE_11 = "Mozilla/5.0 (Windows NT 10.0; WOW64; Trident/7.0; rv:11.0) like Gecko"
+INTERNET_EXPLORER_6 = IE_6 = "Mozilla/4.0 (compatible; MSIE 6.0; Windows NT 5.0; WOW64; Trident/4.0; SLCC1)"
+INTERNET_EXPLORER_7 = IE_7 = "Mozilla/4.0 (compatible; MSIE 7.0; Windows NT 6.0; WOW64; Trident/4.0; SLCC1)"
+INTERNET_EXPLORER_8 = IE_8 = "Mozilla/4.0 (compatible; MSIE 8.0; Windows NT 6.0; WOW64; Trident/4.0; SLCC1)"
+INTERNET_EXPLORER_9 = IE_9 = "Mozilla/5.0 (MSIE 9.0; Windows NT 6.1; Trident/5.0)"
+INTERNET_EXPLORER_11 = IE_11 = "Mozilla/5.0 (Windows NT 10.0; WOW64; Trident/7.0; rv:11.0) like Gecko"
 IPAD = "Mozilla/5.0 (iPad; CPU OS 12_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/12.0 Mobile/15E148 Safari/604.1"
 IPHONE = IPHONE_6 = "Mozilla/5.0 (iPhone; CPU iPhone OS 12_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/12.0 Mobile/15E148 Safari/604.1"
 OPERA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -23,3 +23,10 @@ SAFARI_7 = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_9_3) "
             "AppleWebKit/537.75.14 (KHTML, like Gecko) Version/7.0.3 Safari/7046A194A")
 WINDOWS_PHONE_8 = ("Mozilla/5.0 (compatible; MSIE 10.0; Windows Phone 8.0; "
                    "Trident/6.0; IEMobile/10.0; ARM; Touch; NOKIA; Lumia 920)")
+
+agents_keys = ['ANDROID', 'CHROME', 'CHROME_OS', 'EDGE', 'FIREFOX', 'FIREFOX_MAC',
+               'INTERNET_EXPLORER_6', 'IE_6', 'INTERNET_EXPLORER_7', 'IE_7',
+               'INTERNET_EXPLORER_8', 'IE_8', 'INTERNET_EXPLORER_9', 'IE_9',
+               'INTERNET_EXPLORER_11', 'IE_11', 'IPAD', 'IPHONE', 'IPHONE_6',
+               'OPERA', 'SAFARI', 'SAFARI_8', 'SAFARI_7', 'WINDOWS_PHONE_8']
+agents = dict((k, v) for k, v in globals().items() if k in agents_keys)

@@ -759,6 +759,9 @@ def setup_http_session():
     if args.http_query_params:
         streamlink.set_option("http-query-params", args.http_query_params)
 
+    if args.http_user_agent:
+        streamlink.set_option("http-user-agent", args.http_user_agent)
+
 
 def setup_plugins(extra_plugin_dir=None):
     """Loads any additional plugins."""
