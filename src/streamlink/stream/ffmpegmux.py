@@ -99,6 +99,10 @@ class FFMPEGMuxer(StreamIO):
         metadata = options.pop("metadata", {})
         maps = options.pop("maps", [])
         copyts = options.pop("copyts", False)
+        if copyts:
+            start_at_zero = options.pop("start_at_zero", False)
+        else:
+            start_at_zero = False
 
         self._cmd = [self.command(session), '-nostats', '-y']
         for np in self.pipes:
@@ -112,6 +116,9 @@ class FFMPEGMuxer(StreamIO):
 
         if copyts:
             self._cmd.extend(["-copyts"])
+
+        if start_at_zero:
+            self._cmd.extend(["-start_at_zero"])
 
         for stream, data in metadata.items():
             for datum in data:
