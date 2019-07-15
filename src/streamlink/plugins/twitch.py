@@ -9,23 +9,24 @@ from random import random
 
 import requests
 
+from streamlink.buffers import RingBuffer
 from streamlink.compat import urlparse
 from streamlink.exceptions import NoStreamsError, PluginError, StreamError
 from streamlink.plugin import Plugin, PluginArguments, PluginArgument
 from streamlink.plugin.api import validate
 from streamlink.plugin.api.utils import parse_json, parse_query
 from streamlink.stream import (
-    HTTPStream, HLSStream, FLVPlaylist, extract_flv_header_tags
-)
-from streamlink.stream.hls import HLSStreamReader, HLSStreamWriter, HLSStreamWorker
-from streamlink.stream.hls_playlist import M3U8Parser, load as load_hls_playlist
+    HTTPStream, HLSStream, FLVPlaylist, extract_flv_header_tags,
+    hls_playlist)
+from streamlink.stream.hls import HLSSegmentGenerator
+from streamlink.stream.hls_playlist import M3U8Parser
+from streamlink.stream.segmented import HTTPSegmentProcessor
 from streamlink.utils.times import hours_minutes_seconds
 
 try:
     from itertools import izip as zip
 except ImportError:
     pass
-
 
 log = logging.getLogger(__name__)
 
@@ -119,19 +120,7 @@ _video_schema = validate.Schema(
     }
 )
 
-
-Segment = namedtuple("Segment", "uri duration title key discontinuity scte35 byterange date map")
-
-LOW_LATENCY_MAX_LIVE_EDGE = 2
-
-
-def parse_condition(attr):
-    def wrapper(func):
-        def method(self, *args, **kwargs):
-            if hasattr(self.stream, attr) and getattr(self.stream, attr, False):
-                func(self, *args, **kwargs)
-        return method
-    return wrapper
+TwitchSegment = namedtuple("TwitchSegment", "uri duration title key discontinuity scte35 byterange date map prefetch")
 
 
 class TwitchM3U8Parser(M3U8Parser):
@@ -146,113 +135,73 @@ class TwitchM3U8Parser(M3U8Parser):
 
         return m3u8
 
-    @parse_condition("disable_ads")
     def parse_tag_ext_x_scte35_out(self, value):
         self.state["scte35"] = True
 
     # unsure if this gets used by Twitch
-    @parse_condition("disable_ads")
     def parse_tag_ext_x_scte35_out_cont(self, value):
         self.state["scte35"] = True
 
-    @parse_condition("disable_ads")
     def parse_tag_ext_x_scte35_in(self, value):
         self.state["scte35"] = False
 
-    @parse_condition("low_latency")
     def parse_tag_ext_x_twitch_prefetch(self, value):
-        self.has_prefetch_segments = True
-        segments = self.m3u8.segments
-        if segments:
-            segments.append(segments[-1]._replace(uri=self.uri(value)))
+        self.m3u8.segments.append(self.get_segment(uri=self.uri(value), prefetch=True))
 
-    def get_segment(self, uri):
-        byterange = self.state.pop("byterange", None)
-        extinf = self.state.pop("extinf", (0, None))
-        date = self.state.pop("date", None)
-        map_ = self.state.get("map")
-        key = self.state.get("key")
-        discontinuity = self.state.pop("discontinuity", False)
-        scte35 = self.state.pop("scte35", None)
-
-        return Segment(
-            uri,
-            extinf[0],
-            extinf[1],
-            key,
-            discontinuity,
-            scte35,
-            byterange,
-            date,
-            map_
-        )
+    def get_segment(self, **attrs):
+        duration, title = self.state.pop("extinf", (0, None))
+        props = {
+            'byterange': self.state.pop("byterange", None),
+            'title': title,
+            'duration': duration,
+            'date': self.state.pop("date", None),
+            'map': self.state.get("map"),
+            'key': self.state.get("key"),
+            'discontinuity': self.state.pop("discontinuity", False),
+            'scte35': self.state.pop("scte35", False),
+            'prefetch': False,
+        }
+        props.update(attrs)
+        return TwitchSegment(**props)
 
 
-class TwitchHLSStreamWorker(HLSStreamWorker):
-    def _reload_playlist(self, text, url):
-        return load_hls_playlist(text, url, parser=TwitchM3U8Parser, stream=self.stream)
+class TwitchHLSSegmentGenerator(HLSSegmentGenerator):
+    def __init__(self, *args, **kwargs):
+        self.disable_ads = kwargs.pop("disable_ads", False)
+        super(TwitchHLSSegmentGenerator, self).__init__(*args, **kwargs)
 
-    def _set_playlist_reload_time(self, playlist, sequences):
-        if not self.stream.low_latency:
-            super(TwitchHLSStreamWorker, self)._set_playlist_reload_time(playlist, sequences)
-        else:
-            self.playlist_reload_time = sequences[-1].segment.duration
+    def parse_playlist(self, content, url):
+        # parse the playlist using the specialised Twitch parser
+        return hls_playlist.load(content, url, parser=TwitchM3U8Parser)
 
-    def process_sequences(self, playlist, sequences):
-        if self.playlist_sequence < 0 and self.stream.low_latency and not playlist.has_prefetch_segments:
-            log.info("This is not a low latency stream")
-
-        return super(TwitchHLSStreamWorker, self).process_sequences(playlist, sequences)
-
-
-class TwitchHLSStreamWriter(HLSStreamWriter):
-    def write(self, sequence, *args, **kwargs):
-        if self.stream.disable_ads:
-            if sequence.segment.scte35 is not None:
-                self.reader.ads = sequence.segment.scte35
-                if self.reader.ads:
-                    log.info("Will skip ads beginning with segment {0}".format(sequence.num))
-                else:
-                    log.info("Will stop skipping ads beginning with segment {0}".format(sequence.num))
-            if self.reader.ads:
-                return
-        return HLSStreamWriter.write(self, sequence, *args, **kwargs)
-
-
-class TwitchHLSStreamReader(HLSStreamReader):
-    __worker__ = TwitchHLSStreamWorker
-    __writer__ = TwitchHLSStreamWriter
-    ads = None
+    def valid_sequence(self, sequence):
+        # in addition to the base checks, skip if ad segments if ad skipping is enabled
+        return (super(TwitchHLSSegmentGenerator, self).valid_sequence(sequence) and
+                (not self.disable_ads or sequence.segment.scte35 is None))
 
 
 class TwitchHLSStream(HLSStream):
-    def __init__(self, *args, **kwargs):
-        HLSStream.__init__(self, *args, **kwargs)
-
-        disable_ads = self.session.get_plugin_option("twitch", "disable-ads")
-        low_latency = self.session.get_plugin_option("twitch", "low-latency")
-
-        if low_latency and disable_ads:
-            log.info("Low latency streaming with ad filtering is currently not supported")
-            self.session.set_plugin_option("twitch", "low-latency", False)
-            low_latency = False
-
-        self.disable_ads = disable_ads
-        self.low_latency = low_latency
-
     def open(self):
-        if self.disable_ads:
-            log.info("Will skip ad segments")
-        if self.low_latency:
-            live_edge = max(1, min(LOW_LATENCY_MAX_LIVE_EDGE, self.session.options.get("hls-live-edge")))
-            self.session.options.set("hls-live-edge", live_edge)
-            self.session.options.set("hls-segment-stream-data", True)
-            log.info("Low latency streaming (HLS live edge: {0})".format(live_edge))
+        live_edge = self.session.get_option("hls-live-edge")
+        reload_retries = self.session.get_option("hls-playlist-reload-attempts")
+        duration_offset_start = int(self.start_offset + (self.session.get_option("hls-start-offset") or 0))
+        duration_limit = self.duration or (int(self.session.get_option("hls-duration") or 0) or None)
+        live_restart = self.force_restart or self.session.get_option("hls-live-restart")
+        ignore_names = self.session.get_option("hls-segment-ignore-names")
+        disable_ads = self.session.get_plugin_option("twitch", "disable-ads")
 
-        reader = TwitchHLSStreamReader(self)
-        reader.open()
-
-        return reader
+        generator = TwitchHLSSegmentGenerator(self.session.http,
+                                              live_edge=live_edge,
+                                              start_offset=duration_offset_start,
+                                              duration=duration_limit,
+                                              reload_attempts=reload_retries,
+                                              live_restart=live_restart,
+                                              ignore_names=ignore_names,
+                                              disable_ads=disable_ads,
+                                              **self.args)
+        buffer = RingBuffer(self.session.get_option("ringbuffer-size"))
+        proc = HTTPSegmentProcessor(self.session.http, generator, buffer)
+        return proc.open()
 
     @classmethod
     def _get_variant_playlist(cls, res):
@@ -390,22 +339,6 @@ class Twitch(Plugin):
             help="""
             Do not open the stream if the target channel is currently broadcasting a rerun.
             """
-        ),
-        PluginArgument(
-            "low-latency",
-            action="store_true",
-            help="""
-            Enables low latency streaming by prefetching HLS segments.
-            Sets --hls-segment-stream-data to true and --hls-live-edge to {live_edge}, if it is higher.
-            Reducing --hls-live-edge to 1 will result in the lowest latency possible.
-
-            Low latency streams have to be enabled by the broadcasters on Twitch themselves.
-            Regular streams can cause buffering issues with this option enabled.
-
-            Note: The caching/buffering settings of the chosen player may need to be adjusted as well.
-            Please refer to the player's own documentation for the required parameters and its configuration.
-            Player parameters can be set via Streamlink's --player or --player-args parameters.
-            """.format(live_edge=LOW_LATENCY_MAX_LIVE_EDGE)
         )
     )
 

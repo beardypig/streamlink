@@ -242,7 +242,28 @@ class AutoIncrementSegment(object):
 
 
 class Segment(object):
-    pass
+    @property
+    def encrypted(self):
+        """
+        If the segment is encrypted or not
+        :return: True|False
+        """
+        return False
+
+    def decrypt(self, block):
+        """
+        Decrypts a block of data
+        :param block:
+        :return:
+        """
+        return block
+
+    def finalise(self):
+        """
+        Finalise any decrpytion for block ciphers.
+        :return:
+        """
+        pass
 
 
 class HTTPSegment(Segment, AutoIncrementSegment):
@@ -288,30 +309,6 @@ class HTTPSegment(Segment, AutoIncrementSegment):
         """
         return 0, None
 
-    @property
-    def encrypted(self):
-        """
-        If the segment is encrypted or not
-        :return: True|False
-        """
-        return False
-
-    def decrypt(self, block):
-        """
-        Decrypts a block of data
-        :param block:
-        :return:
-        """
-        return block
-
-    def finalise(self):
-        """
-        Finalise any decrpytion for block ciphers.
-        :return:
-        """
-        pass
-
-
 
 class RangedHTTPSegment(HTTPSegment):
     """
@@ -340,6 +337,7 @@ class AESEncryptedHTTPSegment(HTTPSegment):
     """
     An encrypted HTTP Segment, range requests will not be possible
     """
+
     def __init__(self, uri, key, iv, **request_params):
         super(AESEncryptedHTTPSegment, self).__init__(uri,
                                                       **request_params)
@@ -392,6 +390,7 @@ class SegmentGenerator(object):
     """
     Generate segments including sequence information
     """
+
     def __init__(self):
         self._closed = Event()
 
@@ -419,29 +418,16 @@ class SegmentError(Exception):
     pass
 
 
-class HTTPSegmentProcessor(Thread):
-    """
-    Downloads HTTPSegments and writes the data to an output buffer.
-
-    The segments are streamed and decrypted on the fly, if required, and streamed
-    out to a queue, where they are written to an output buffer.
-    """
-
-    def __init__(self, http, segment_generator, buffer, **kwargs):
-        super(HTTPSegmentProcessor, self).__init__(**kwargs)
+class SegmentProcessor(Thread):
+    def __init__(self, segment_generator, buffer, **kwargs):
+        super(SegmentProcessor, self).__init__(**kwargs)
         assert isinstance(buffer, RingBuffer)
         self._closed = Event()
-        self.http = http
         self.segment_generator = segment_generator
         self.buffer = buffer
 
-        self.retries = 3
-        self.timeout = 5 * self.retries
         self.threads = 5  # (os.cpu_count() or 1) * 5
-
         self.fetch_executor = futures.ThreadPoolExecutor(max_workers=self.threads)
-        self.request_params = {}
-        self.byterange_offsets = {}
         self._filler = None
         self._data_queue = queue.Queue(maxsize=self.threads - 1)
         self._queue_lock = Lock()
@@ -492,7 +478,6 @@ class HTTPSegmentProcessor(Thread):
                         log.error("Download if {0} cancelled".format(segment.sequence_number))
                         break
 
-
     def filler(self):
         """
         Takes segments and puts them in the executor queue, and then adds the
@@ -509,12 +494,25 @@ class HTTPSegmentProcessor(Thread):
                 try:
                     future = self.fetch_executor.submit(self.fetcher, segment, buffer)
                     self.put((segment, buffer, future))
-                    log.debug("enqued {}: {} {}".format(segment.sequence_number, shorten(segment.uri, width=70), segment.range))
                 except RuntimeError:
                     return
 
         self.put((None, None, None))
         log.debug("enqued FINAL marker")
+
+    def fetcher(self, segment, buffer):
+        """
+        Manage the fetching of the segment, stores the data in a per-segment buffer
+
+        :param segment: the segment descriptor
+        :param buffer: output buffer for this segment
+        """
+        for chunk in self.fetch(segment, chunk_size=min(buffer.buffer_size, 16 * 1024)):
+            buffer.write(chunk)
+        buffer.close()
+
+    def fetch(self, segment, chunk_size=16 * 1024):
+        raise NotImplementedError
 
     def put(self, item):
         # Add the item to the queue, with a timeout and retry  - the timeout
@@ -545,12 +543,40 @@ class HTTPSegmentProcessor(Thread):
 
         return self.buffer.read(size, timeout=self.timeout)
 
-    def _get_range_header(self, segment, offset=0):
+    def close(self):
+        self._closed.set()
+        self.segment_generator.close()
+        self.buffer.close()
+
+        self.fetch_executor.shutdown(wait=False)
+        if concurrent.futures.thread._threads_queues:
+            concurrent.futures.thread._threads_queues.clear()
+
+
+class HTTPSegmentProcessor(SegmentProcessor):
+    """
+    Downloads HTTPSegments and writes the data to an output buffer.
+
+    The segments are streamed and decrypted on the fly, if required, and streamed
+    out to a queue, where they are written to an output buffer.
+    """
+
+    def __init__(self, http, segment_generator, buffer, **kwargs):
+        super(HTTPSegmentProcessor, self).__init__(segment_generator, buffer, **kwargs)
+        self.http = http
+
+        self.retries = 3
+        self.timeout = 5 * self.retries
+        self.request_params = {}
+        self.byterange_offsets = {}
+
+    @staticmethod
+    def _get_range_header(segment, offset=0):
         """
-        If the segment.segment had
-        :param segment:
-        :param offset:
-        :return:
+        If the segment has a range attribute then return a Range header
+        :param segment: Segment to generate range for
+        :param offset: additional offset in to the range, for resuming interrupted requests
+        :return: dict; with posible Range header set
         """
         headers = {}
         start, length = segment.range
@@ -559,21 +585,9 @@ class HTTPSegmentProcessor(Thread):
             length = max(length - (offset - 1), 0)
 
         if start > 0 or length is not None:
-            headers["Range"] = "bytes={0}-{1}".format(start, (
-                start + length - 1) if length else "")
+            headers["Range"] = "bytes={0}-{1}".format(start, (start + length - 1) if length else "")
 
         return headers
-
-    def fetcher(self, segment, buffer):
-        """
-        Manage the fetching of the segment, stores the data in a per-segment buffer
-
-        :param segment: the segment descriptor
-        :param buffer: output buffer for this segment
-        """
-        for chunk in self.fetch(segment, chunk_size=min(buffer.buffer_size, 16 * 1024)):
-            buffer.write(chunk)
-        buffer.close()
 
     def fetch(self, segment, chunk_size=16 * 1024):
         """
@@ -586,7 +600,9 @@ class HTTPSegmentProcessor(Thread):
         :param chunk_size: size in bytes to yield
         :yield: data and segment number
         """
-        log.debug("Starting fetch of #{}".format(segment.sequence_number))
+
+        log.debug("Starting fetch of #{} : {} (range: {}-{})".format(segment.sequence_number, shorten(segment.uri, width=70),
+                                                                     segment.range[0], segment.range[1] or ""))
 
         retries = self.retries
         offset = 0
@@ -618,10 +634,10 @@ class HTTPSegmentProcessor(Thread):
                 #             if skipped >= offset:
                 #                 break
                 if streamer.headers.get("Content-Length"):
-                    size = int(streamer.headers.get("Content-Length")) / 1024.0
+                    size = "({0:.2f} KB)".format(int(streamer.headers.get("Content-Length")) / 1024.0)
                 else:
-                    size = "N/A"
-                log.debug("Starting download of segment {0} ({1:.2f} KB)".format(segment.sequence_number, size))
+                    size = ""
+                log.debug("Starting download of segment {0} {1}".format(segment.sequence_number, size))
                 t = time.time()
                 for chunk in streamer.iter_content(chunk_size=chunk_size):
                     if segment.encrypted:
@@ -640,12 +656,3 @@ class HTTPSegmentProcessor(Thread):
         log.error("Failed to open segment {0}: {1}", segment.sequence_nuber,
                   last_error)
         raise SegmentError("Failed to read segment", segment, last_error)
-
-    def close(self):
-        self._closed.set()
-        self.segment_generator.close()
-        self.buffer.close()
-
-        self.fetch_executor.shutdown(wait=False)
-        if concurrent.futures.thread._threads_queues:
-            concurrent.futures.thread._threads_queues.clear()

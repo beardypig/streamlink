@@ -11,7 +11,6 @@ log = logging.getLogger(__name__)
 
 __all__ = ["load", "M3U8Parser"]
 
-
 # EXT-X-BYTERANGE
 ByteRange = namedtuple("ByteRange", "range offset")
 
@@ -237,7 +236,7 @@ class M3U8Parser(object):
                 return
             getattr(self, method)(value)
         elif self.state.pop("expect_segment", None):
-            segment = self.get_segment(self.uri(line))
+            segment = self.get_segment(uri=self.uri(line))
             self.m3u8.segments.append(segment)
         elif self.state.pop("expect_playlist", None):
             playlist = self.get_playlist(self.uri(line))
@@ -282,24 +281,19 @@ class M3U8Parser(object):
         else:
             return uri
 
-    def get_segment(self, uri):
-        byterange = self.state.pop("byterange", None)
-        extinf = self.state.pop("extinf", (0, None))
-        date = self.state.pop("date", None)
-        map_ = self.state.get("map")
-        key = self.state.get("key")
-        discontinuity = self.state.pop("discontinuity", False)
-
-        return Segment(
-            uri,
-            extinf[0],
-            extinf[1],
-            key,
-            discontinuity,
-            byterange,
-            date,
-            map_
-        )
+    def get_segment(self, **attrs):
+        duration, title = self.state.pop("extinf", (0, None))
+        props = {
+            'byterange': self.state.pop("byterange", None),
+            'duration': duration,
+            'title': title,
+            'date': self.state.pop("date", None),
+            'map_': self.state.get("map"),
+            'key': self.state.get("key"),
+            'discontinuity': self.state.pop("discontinuity", False)
+        }
+        props.update(attrs)
+        return Segment(**props)
 
     def get_playlist(self, uri):
         streaminf = self.state.pop("streaminf", {})

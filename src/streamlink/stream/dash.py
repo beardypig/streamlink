@@ -11,7 +11,7 @@ from streamlink.stream.http import valid_args, normalize_key
 from streamlink.stream.stream import Stream
 from streamlink.stream.dash_manifest import MPD, sleeper, sleep_until, utc, freeze_timeline
 from streamlink.stream.ffmpegmux import FFMPEGMuxer
-from streamlink.stream.segmented import SegmentedStreamReader, SegmentedStreamWorker, SegmentedStreamWriter
+from streamlink.stream.segmented import SegmentedStreamReader, SegmentedStreamWorker, SegmentedStreamWriter, SegmentGenerator
 from streamlink.utils import parse_xml
 from streamlink.utils.l10n import Language
 
@@ -138,6 +138,11 @@ class DASHStreamReader(SegmentedStreamReader):
         self.mime_type = mime_type
         self.representation_id = representation_id
         log.debug("Opening DASH reader for: {0} ({1})".format(self.representation_id, self.mime_type))
+
+
+class DASHSegmentGenerator(SegmentGenerator):
+    def __init__(self):
+        SegmentGenerator.__init__(self)
 
 
 class DASHStream(Stream):
