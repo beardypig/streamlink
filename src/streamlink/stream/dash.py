@@ -1,148 +1,96 @@
-import copy
+import datetime
 import itertools
 import logging
-import datetime
 import os.path
 
 import requests
+
 from streamlink import StreamError, PluginError
+from streamlink.buffers import RingBuffer
 from streamlink.compat import urlparse, urlunparse
-from streamlink.stream.http import valid_args, normalize_key
-from streamlink.stream.stream import Stream
-from streamlink.stream.dash_manifest import MPD, sleeper, sleep_until, utc, freeze_timeline
+from streamlink.stream.dash_manifest import MPD, sleep_until, utc, freeze_timeline
 from streamlink.stream.ffmpegmux import FFMPEGMuxer
-from streamlink.stream.segmented import SegmentedStreamReader, SegmentedStreamWorker, SegmentedStreamWriter, SegmentGenerator
+from streamlink.stream.http import valid_args, normalize_key
+from streamlink.stream.segmented import SegmentGenerator, HTTPSegmentProcessor, ManifestBasedSegmentGenerator, RangedHTTPSegment, HTTPSegment
+from streamlink.stream.stream import Stream
 from streamlink.utils import parse_xml
 from streamlink.utils.l10n import Language
 
 log = logging.getLogger(__name__)
 
 
-class DASHStreamWriter(SegmentedStreamWriter):
-    def __init__(self, reader, *args, **kwargs):
-        options = reader.stream.session.options
-        kwargs["retries"] = options.get("dash-segment-attempts")
-        kwargs["threads"] = options.get("dash-segment-threads")
-        kwargs["timeout"] = options.get("dash-segment-timeout")
-        SegmentedStreamWriter.__init__(self, reader, *args, **kwargs)
+class DASHSegmentGenerator(ManifestBasedSegmentGenerator):
+    def __init__(self, http, mpd, representation_id, mime_type, live_edge=3, period_index=0, **request_params):
+        SegmentGenerator.__init__(self)
 
-    def fetch(self, segment, retries=None):
-        if self.closed or not retries:
-            return
+        self.http = http
+        self.mpd = mpd
+        self.representation_id = representation_id
+        self.mime_type = mime_type
+        self.live_edge = live_edge
+        self.period_index = period_index
+        self.request_params = request_params
 
-        try:
-            request_args = copy.deepcopy(self.reader.stream.args)
-            headers = request_args.pop("headers", {})
-            now = datetime.datetime.now(tz=utc)
-            if segment.available_at > now:
-                time_to_wait = (segment.available_at - now).total_seconds()
-                fname = os.path.basename(urlparse(segment.url).path)
-                log.debug("Waiting for segment: {fname} ({wait:.01f}s)".format(fname=fname, wait=time_to_wait))
-                sleep_until(segment.available_at)
+    def parse_manifest(self, content, url, base_url=None, timelines=None, **kwargs):
+        return MPD(parse_xml(content, ignore_ns=True),
+                   base_url=base_url,
+                   url=url,
+                   timelines=timelines)
 
-            if segment.range:
-                start, length = segment.range
-                if length:
-                    end = start + length - 1
-                else:
-                    end = ""
-                headers["Range"] = "bytes={0}-{1}".format(start, end)
+    def reload_manifest(self):
+        if not self.closed and self.mpd.type == "dynamic":
+            log.debug("Reloading manifest ({0}:{1})".format(self.representation_id, self.mime_type))
+            res = self.http.get(self.mpd.url, exception=StreamError)
 
-            return self.session.http.get(segment.url,
-                                         timeout=self.timeout,
-                                         exception=StreamError,
-                                         headers=headers,
-                                         **request_args)
-        except StreamError as err:
-            log.error("Failed to open segment {0}: {1}", segment.url, err)
-            return self.fetch(segment, retries - 1)
+            new_mpd = self.parse_manifest(res.text, self.mpd.url, base_url=self.mpd.base_url, timelines=self.mpd.timelines)
 
-    def write(self, segment, res, chunk_size=8192):
-        for chunk in res.iter_content(chunk_size):
-            if not self.closed:
-                self.reader.buffer.write(chunk)
-            else:
-                log.warning("Download of segment: {} aborted".format(segment.url))
-                return
+            new_rep = new_mpd.find_representation(self.representation_id, self.mime_type, period=self.period_index)
+            with freeze_timeline(new_mpd):
+                changed = len(list(itertools.islice(new_rep.segments(), 1))) > 0
 
-        log.debug("Download of segment: {} complete".format(segment.url))
+            if changed:
+                self.mpd = new_mpd
 
+            return changed
+        return False
 
-class DASHStreamWorker(SegmentedStreamWorker):
-    def __init__(self, *args, **kwargs):
-        SegmentedStreamWorker.__init__(self, *args, **kwargs)
-        self.mpd = self.stream.mpd
-        self.period = self.stream.period
+    def update_reload_time(self, changed):
+        reload_wait = max(self.mpd.minimumUpdatePeriod.total_seconds(),
+                          self.mpd.periods[self.period_index].duration.total_seconds()) or self.DEFAULT_RELOAD_TIME
+        if not changed:
+            self.manifest_reload_time /= 2.0
+        else:
+            self.manifest_reload_time = max(reload_wait * (self.live_edge - 1), reload_wait) * 0.8
 
-    @staticmethod
-    def get_representation(mpd, representation_id, mime_type):
-        for aset in mpd.periods[0].adaptationSets:
-            for rep in aset.representations:
-                if rep.id == representation_id and rep.mimeType == mime_type:
-                    return rep
-
-    def iter_segments(self):
+    def __iter__(self):
         init = True
-        back_off_factor = 1
         while not self.closed:
-            # find the representation by ID
-            representation = self.get_representation(self.mpd, self.reader.representation_id, self.reader.mime_type)
-            refresh_wait = max(self.mpd.minimumUpdatePeriod.total_seconds(),
-                               self.mpd.periods[0].duration.total_seconds()) or 5
-            with sleeper(refresh_wait * back_off_factor):
-                if representation:
-                    for segment in representation.segments(init=init):
-                        if self.closed:
-                            break
-                        yield segment
-                        # log.debug("Adding segment {0} to queue", segment.url)
-
-                    if self.mpd.type == "dynamic":
-                        if not self.reload():
-                            back_off_factor = max(back_off_factor * 1.3, 10.0)
-                        else:
-                            back_off_factor = 1
-                    else:
-                        return
+            representation = self.mpd.find_representation(self.representation_id, self.mime_type, self.period_index)
+            if representation:
+                for segment in representation.segments(init=init):
                     init = False
 
-    def reload(self):
-        if self.closed:
-            return
+                    if self.closed:
+                        break
 
-        self.reader.buffer.wait_free()
-        log.debug("Reloading manifest ({0}:{1})".format(self.reader.representation_id, self.reader.mime_type))
-        res = self.session.http.get(self.mpd.url, exception=StreamError, **self.stream.args)
-
-        new_mpd = MPD(self.session.http.xml(res, ignore_ns=True),
-                      base_url=self.mpd.base_url,
-                      url=self.mpd.url,
-                      timelines=self.mpd.timelines)
-
-        new_rep = self.get_representation(new_mpd, self.reader.representation_id, self.reader.mime_type)
-        with freeze_timeline(new_mpd):
-            changed = len(list(itertools.islice(new_rep.segments(), 1))) > 0
-
-        if changed:
-            self.mpd = new_mpd
-
-        return changed
-
-
-class DASHStreamReader(SegmentedStreamReader):
-    __worker__ = DASHStreamWorker
-    __writer__ = DASHStreamWriter
-
-    def __init__(self, stream, representation_id, mime_type, *args, **kwargs):
-        SegmentedStreamReader.__init__(self, stream, *args, **kwargs)
-        self.mime_type = mime_type
-        self.representation_id = representation_id
-        log.debug("Opening DASH reader for: {0} ({1})".format(self.representation_id, self.mime_type))
-
-
-class DASHSegmentGenerator(SegmentGenerator):
-    def __init__(self):
-        SegmentGenerator.__init__(self)
+                    now = datetime.datetime.now(tz=utc)
+                    if segment.available_at > now:
+                        time_to_wait = (segment.available_at - now).total_seconds()
+                        fname = os.path.basename(urlparse(segment.url).path)
+                        log.debug("Waiting for segment: {fname} ({wait:.01f}s)".format(fname=fname, wait=time_to_wait))
+                        sleep_until(segment.available_at)
+                    if segment.range:
+                        yield RangedHTTPSegment(segment.url,
+                                                offset=segment.range.offset,
+                                                length=segment.range.length,
+                                                **self.request_params)
+                    else:
+                        yield HTTPSegment(segment.url, **self.request_params)
+            if self.mpd.type == "dynamic":
+                changed = self.reload_manifest()
+                self.update_reload_time(changed)
+            else:
+                break
 
 
 class DASHStream(Stream):
@@ -249,20 +197,40 @@ class DASHStream(Stream):
         return ret
 
     def open(self):
+        live_edge = self.session.get_option("dash-live-edge")
+        reload_retries = self.session.get_option("dash-playlist-reload-attempts")
+
+        video = None
+        audio = None
+
         if self.video_representation:
-            video = DASHStreamReader(self, self.video_representation.id, self.video_representation.mimeType)
-            video.open()
+            video_segment_generator = DASHSegmentGenerator(self.session.http,
+                                                           self.mpd,
+                                                           self.video_representation.id,
+                                                           self.video_representation.mimeType,
+                                                           live_edge=live_edge,
+                                                           reload_attempts=reload_retries,
+                                                           **self.args)
+            video_buffer = RingBuffer(self.session.get_option("ringbuffer-size"))
+            video = HTTPSegmentProcessor(self.session.http, video_segment_generator, video_buffer)
 
         if self.audio_representation:
-            audio = DASHStreamReader(self, self.audio_representation.id, self.audio_representation.mimeType)
-            audio.open()
+            audio_segment_generator = DASHSegmentGenerator(self.session.http,
+                                                           self.mpd,
+                                                           self.audio_representation.id,
+                                                           self.audio_representation.mimeType,
+                                                           live_edge=live_edge,
+                                                           reload_attempts=reload_retries,
+                                                           **self.args)
+            audio_buffer = RingBuffer(self.session.get_option("ringbuffer-size"))
+            audio = HTTPSegmentProcessor(self.session.http, audio_segment_generator, audio_buffer)
 
         if self.video_representation and self.audio_representation:
-            return FFMPEGMuxer(self.session, video, audio, copyts=True).open()
+            return FFMPEGMuxer(self.session, video.open(), audio.open(), copyts=True).open()
         elif self.video_representation:
-            return video
+            return video.open()
         elif self.audio_representation:
-            return audio
+            return audio.open()
 
     def to_url(self):
         return self.mpd.url

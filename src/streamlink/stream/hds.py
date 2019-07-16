@@ -15,9 +15,6 @@ from io import BytesIO
 from math import ceil
 
 from .flvconcat import FLVTagConcat
-from .segmented import (SegmentedStreamReader,
-                        SegmentedStreamWriter,
-                        SegmentedStreamWorker)
 from .stream import Stream
 from .wrappers import StreamIOIterWrapper
 
@@ -47,6 +44,14 @@ FRAGMENT_URL = "{url}{identifier}{quality}Seg{segment}-Frag{fragment}"
 
 Fragment = namedtuple("Fragment", "segment fragment duration url")
 
+class SegmentedStreamWriter:
+    pass
+
+class SegmentedStreamWorker:
+    pass
+
+class SegmentedStreamReader:
+    pass
 
 class HDSStreamWriter(SegmentedStreamWriter):
     def __init__(self, reader, *args, **kwargs):

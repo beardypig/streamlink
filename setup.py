@@ -23,7 +23,9 @@ deps = [
     'win-inet-pton;python_version<"3.0" and platform_system=="Windows"',
     # shutil.get_terminal_size and which were added in Python 3.3
     'backports.shutil_which;python_version<"3.3"',
-    'backports.shutil_get_terminal_size;python_version<"3.3"'
+    'backports.shutil_get_terminal_size;python_version<"3.3"',
+    # futures, added in python 3
+    'futures; python_version == "2.7"'
 ]
 
 # for encrypted streams

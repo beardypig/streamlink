@@ -1,16 +1,18 @@
 import concurrent.futures
 import logging
-import queue
 import time
-from collections import deque
 from concurrent import futures
 from concurrent.futures import CancelledError
 from threading import Thread, Lock, Event
 
+try:
+    import queue
+except ImportError:
+    import Queue as queue
+
 from Crypto.Cipher import AES
 
-from streamlink.buffers import RingBuffer, Buffer
-from streamlink.stream.stream import StreamIO
+from streamlink.buffers import RingBuffer
 
 log = logging.getLogger(__name__)
 log.setLevel(logging.DEBUG)
@@ -25,203 +27,6 @@ def shorten(text, width):
         return "{0}..{1}".format(x.strip(), y.strip())
     else:
         return text
-
-
-class SegmentedStreamWorker(Thread):
-    """The general worker thread.
-
-    This thread is responsible for queueing up segments in the
-    writer thread.
-    """
-
-    def __init__(self, reader, **kwargs):
-        self.closed = False
-        self.reader = reader
-        self.writer = reader.writer
-        self.stream = reader.stream
-        self.session = reader.stream.session
-
-        self._wait = None
-
-        Thread.__init__(self, name="Thread-{0}".format(self.__class__.__name__))
-        self.daemon = True
-
-    def close(self):
-        """Shuts down the thread."""
-        if not self.closed:
-            log.debug("Closing worker thread")
-
-        self.closed = True
-        if self._wait:
-            self._wait.set()
-
-    def wait(self, time):
-        """Pauses the thread for a specified time.
-
-        Returns False if interrupted by another thread and True if the
-        time runs out normally.
-        """
-        self._wait = Event()
-        return not self._wait.wait(time)
-
-    def iter_segments(self):
-        """The iterator that generates segments for the worker thread.
-
-        Should be overridden by the inheriting class.
-        """
-        return
-        yield
-
-    def run(self):
-        for segment in self.iter_segments():
-            if self.closed:
-                break
-            self.writer.put(segment)
-
-        # End of stream, tells the writer to exit
-        self.writer.put(None)
-        self.close()
-
-
-class SegmentedStreamWriter(Thread):
-    """The writer thread.
-
-    This thread is responsible for fetching segments, processing them
-    and finally writing the data to the buffer.
-    """
-
-    def __init__(self, reader, size=20, retries=None, threads=None, timeout=None, ignore_names=None):
-        self.closed = False
-        self.reader = reader
-        self.stream = reader.stream
-        self.session = reader.stream.session
-
-        if not retries:
-            retries = self.session.options.get("stream-segment-attempts")
-
-        if not threads:
-            threads = self.session.options.get("stream-segment-threads")
-
-        if not timeout:
-            timeout = self.session.options.get("stream-segment-timeout")
-
-        self.retries = retries
-        self.timeout = timeout
-        self.ignore_names = ignore_names
-        self.executor = futures.ThreadPoolExecutor(max_workers=threads)
-        self.futures = queue.Queue(size)
-
-        Thread.__init__(self, name="Thread-{0}".format(self.__class__.__name__))
-        self.daemon = True
-
-    def close(self):
-        """Shuts down the thread."""
-        if not self.closed:
-            log.debug("Closing writer thread")
-
-        self.closed = True
-        self.reader.buffer.close()
-        if concurrent.futures.thread._threads_queues:
-            concurrent.futures.thread._threads_queues.clear()
-        self.executor.shutdown(wait=False)
-
-    def put(self, segment):
-        """Adds a segment to the download pool and write queue."""
-        if self.closed:
-            return
-
-        if segment is not None:
-            future = self.executor.submit(self.fetch, segment,
-                                          retries=self.retries)
-        else:
-            future = None
-
-        self.queue(self.futures, (segment, future))
-
-    def queue(self, queue_, value):
-        """Puts a value into a queue but aborts if this thread is closed."""
-        while not self.closed:
-            try:
-                queue_.put(value, block=True, timeout=1)
-                return
-            except queue.Full:
-                continue
-
-    def fetch(self, segment):
-        """Fetches a segment.
-
-        Should be overridden by the inheriting class.
-        """
-        pass
-
-    def write(self, segment, result):
-        """Writes a segment to the buffer.
-
-        Should be overridden by the inheriting class.
-        """
-        pass
-
-    def run(self):
-        while not self.closed:
-            try:
-                segment, future = self.futures.get(block=True, timeout=0.5)
-            except queue.Empty:
-                continue
-
-            # End of stream
-            if future is None:
-                break
-
-            while not self.closed:
-                try:
-                    result = future.result(timeout=0.5)
-                except futures.TimeoutError:
-                    continue
-                except futures.CancelledError:
-                    break
-
-                if result is not None:
-                    self.write(segment, result)
-
-                break
-
-        self.close()
-
-
-class SegmentedStreamReader(StreamIO):
-    __worker__ = SegmentedStreamWorker
-    __writer__ = SegmentedStreamWriter
-
-    def __init__(self, stream, timeout=None):
-        StreamIO.__init__(self)
-        self.session = stream.session
-        self.stream = stream
-
-        if not timeout:
-            timeout = self.session.options.get("stream-timeout")
-
-        self.timeout = timeout
-
-    def open(self):
-        buffer_size = self.session.get_option("ringbuffer-size")
-        self.buffer = RingBuffer(buffer_size)
-        self.writer = self.__writer__(self)
-        self.worker = self.__worker__(self)
-
-        self.writer.start()
-        self.worker.start()
-
-    def close(self):
-        self.worker.close()
-        self.writer.close()
-        self.buffer.close()
-
-    def read(self, size):
-        if not self.buffer:
-            return b""
-
-        return self.buffer.read(size, block=self.writer.is_alive(),
-                                timeout=self.timeout)
 
 
 class AutoIncrementSegment(object):
@@ -414,6 +219,34 @@ class SegmentGenerator(object):
         return self._closed.is_set()
 
 
+class ManifestBasedSegmentGenerator(SegmentGenerator):
+    # sensible defaults
+    MIN_RELOAD_TIME = 1.0
+    DEFAULT_RELOAD_TIME = 3.0
+
+    def __init__(self):
+        super(ManifestBasedSegmentGenerator, self).__init__()
+        self._manifest_reload_time = self.DEFAULT_RELOAD_TIME
+
+    @property
+    def manifest_reload_time(self):
+        return self._manifest_reload_time
+
+    @manifest_reload_time.setter
+    def manifest_reload_time(self, value):
+        # ensure that the reload time is never less than the minimum
+        self._manifest_reload_time = max(self.MIN_RELOAD_TIME, value)
+
+    def reload_manifest(self):
+        raise NotImplementedError
+
+    def parse_manifest(self, content, url, **kwargs):
+        raise NotImplementedError
+
+    def update_reload_time(self, changed):
+        raise NotImplementedError
+
+
 class SegmentError(Exception):
     pass
 
@@ -589,7 +422,7 @@ class HTTPSegmentProcessor(SegmentProcessor):
 
         return headers
 
-    def fetch(self, segment, chunk_size=16 * 1024):
+    def fetch(self, segment, chunk_size=128 * 1024):
         """
         Download the sequence and yield data chunks.
 
@@ -640,6 +473,8 @@ class HTTPSegmentProcessor(SegmentProcessor):
                 log.debug("Starting download of segment {0} {1}".format(segment.sequence_number, size))
                 t = time.time()
                 for chunk in streamer.iter_content(chunk_size=chunk_size):
+                    if self.closed:  # stop downloading the segment if interrupted
+                        break
                     if segment.encrypted:
                         yield segment.decrypt(chunk)
                     else:

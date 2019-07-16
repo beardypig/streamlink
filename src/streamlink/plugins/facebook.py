@@ -50,12 +50,8 @@ class Facebook(Plugin):
                 manifest = bytes(unquote_plus(manifest), "utf-8").decode("unicode_escape")
             else:
                 manifest = unquote_plus(manifest).decode("string_escape")
-            # Ignore unsupported manifests until DASH SegmentBase support is implemented
-            if "SegmentBase" in manifest:
-                log.error("Skipped DASH manifest with SegmentBase streams")
-            else:
-                for s in DASHStream.parse_manifest(self.session, manifest).items():
-                    yield s
+            for s in DASHStream.parse_manifest(self.session, manifest).items():
+                yield s
 
     def _get_streams(self):
         self.session.http.headers.update({'User-Agent': useragents.CHROME})

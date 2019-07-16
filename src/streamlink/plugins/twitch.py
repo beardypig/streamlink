@@ -170,7 +170,7 @@ class TwitchHLSSegmentGenerator(HLSSegmentGenerator):
         self.disable_ads = kwargs.pop("disable_ads", False)
         super(TwitchHLSSegmentGenerator, self).__init__(*args, **kwargs)
 
-    def parse_playlist(self, content, url):
+    def parse_manifest(self, content, url):
         # parse the playlist using the specialised Twitch parser
         return hls_playlist.load(content, url, parser=TwitchM3U8Parser)
 

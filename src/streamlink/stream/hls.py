@@ -4,15 +4,16 @@ import struct
 from collections import namedtuple
 
 from streamlink.buffers import RingBuffer
-from streamlink.compat import urlparse
 from streamlink.exceptions import StreamError
 from streamlink.stream import hls_playlist
 from streamlink.stream.ffmpegmux import FFMPEGMuxer, MuxedStream
 from streamlink.stream.http import HTTPStream
-from streamlink.stream.segmented import (SegmentedStreamReader,
-                                         SegmentedStreamWriter,
-                                         SegmentedStreamWorker, SegmentGenerator, HTTPSegmentProcessor, HTTPSegment, RangedHTTPSegment,
-                                         AESEncryptedHTTPSegment)
+from streamlink.stream.segmented import (SegmentGenerator,
+                                         HTTPSegmentProcessor,
+                                         HTTPSegment,
+                                         RangedHTTPSegment,
+                                         AESEncryptedHTTPSegment,
+                                         ManifestBasedSegmentGenerator)
 
 log = logging.getLogger(__name__)
 Sequence = namedtuple("Sequence", "num segment")
@@ -22,10 +23,7 @@ def num_to_iv(n):
     return struct.pack(">8xq", n)
 
 
-class HLSSegmentGenerator(SegmentGenerator):
-    MIN_RELOAD_TIME = 1.0
-    DEFAULT_RELOAD_TIME = 3.0
-
+class HLSSegmentGenerator(ManifestBasedSegmentGenerator):
     def __init__(self, http, url, live_edge=3, start_offset=0, duration=None, reload_attempts=1, live_restart=False,
                  ignore_names=None, **request_params):
         SegmentGenerator.__init__(self)
@@ -85,7 +83,7 @@ class HLSSegmentGenerator(SegmentGenerator):
 
         if not changed:
             # half the reload wait time if the playlist doesn't change
-            self.playlist_reload_time = max(self.playlist_reload_time / 2.0, self.MIN_RELOAD_TIME)
+            self.playlist_reload_time /= 2.0
         elif segment_duration:  # this should be the case after the first reload
             """
             According to the HLS spec the playlist shouldn't be reloaded more frequently than once per TARGET DURATION.
@@ -100,10 +98,10 @@ class HLSSegmentGenerator(SegmentGenerator):
 
         log.debug("Updated playlist refresh time to {0:.2f}s".format(self.playlist_reload_time))
 
-    def parse_playlist(self, content, url):
-        return hls_playlist.load(content, url)
+    def parse_manifest(self, content, url, **kwargs):
+        return hls_playlist.load(content, url, **kwargs)
 
-    def reload_playlist(self):
+    def reload_manifest(self):
         if not self.closed:
             log.debug("Reloading playlist")
             res = self.http.get(self.url,
@@ -113,7 +111,7 @@ class HLSSegmentGenerator(SegmentGenerator):
                                 timeout=max(1.0, self.playlist_reload_time / 2.0),
                                 **self.request_params)
             try:
-                self.playlist = self.parse_playlist(res.text, res.url)
+                self.playlist = self.parse_manifest(res.text, res.url)
             except ValueError as err:
                 raise StreamError(err)
 
@@ -181,7 +179,7 @@ class HLSSegmentGenerator(SegmentGenerator):
     def __iter__(self):
         total_duration = 0
 
-        self.reload_playlist()
+        self.reload_manifest()
 
         while not self.closed:
             for sequence in filter(self._future_sequence, self.playlist_sequences):
@@ -238,7 +236,7 @@ class HLSSegmentGenerator(SegmentGenerator):
 
             if self.wait(self.playlist_reload_time):
                 try:
-                    self.reload_playlist()
+                    self.reload_manifest()
                 except StreamError as err:
                     log.warning("Failed to reload playlist: {0}", err)
 

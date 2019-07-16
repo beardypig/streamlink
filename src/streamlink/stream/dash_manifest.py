@@ -228,7 +228,7 @@ class MPD(MPDNode):
         # parser attributes
         self.url = url
         self.timelines = defaultdict(lambda: -1)
-        self.timelines.update(kwargs.pop("timelines", {}))
+        self.timelines.update(kwargs.pop("timelines", None) or {})
         self.id = self.attr(u"id")
         self.profiles = self.attr(u"profiles", required=True)
         self.type = self.attr(u"type", default=u"static", parser=MPDParsers.type)
@@ -256,6 +256,12 @@ class MPD(MPDNode):
         self.baseURLs = self.children(BaseURL)
         self.periods = self.children(Period, minimum=1)
         self.programInformation = self.children(ProgramInformation)
+
+    def find_representation(self, representation_id, mime_type, period=0):
+        for aset in self.periods[period].adaptationSets:
+            for rep in aset.representations:
+                if rep.id == representation_id and rep.mimeType == mime_type:
+                    return rep
 
 
 class ProgramInformation(MPDNode):
