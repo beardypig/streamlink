@@ -4,6 +4,7 @@ import time
 from concurrent import futures
 from concurrent.futures import CancelledError
 from threading import Thread, Lock, Event
+from math import log2
 
 try:
     import queue
@@ -27,6 +28,14 @@ def shorten(text, width):
         return "{0}..{1}".format(x.strip(), y.strip())
     else:
         return text
+
+
+def sizeof_fmt(size):
+    units = ['', 'Ki', 'Mi', 'Gi']
+    order = int(log2(size) // 10) if size > 0 else 0
+    unit = units[order] if order < len(units) else units[-1]
+
+    return "{0:.4g}{1}B".format(size / 1024**order, unit)
 
 
 class AutoIncrementSegment(object):
@@ -467,10 +476,10 @@ class HTTPSegmentProcessor(SegmentProcessor):
                 #             if skipped >= offset:
                 #                 break
                 if streamer.headers.get("Content-Length"):
-                    size = "({0:.2f} KB)".format(int(streamer.headers.get("Content-Length")) / 1024.0)
+                    size = sizeof_fmt(int(streamer.headers.get("Content-Length")))
                 else:
-                    size = ""
-                log.debug("Starting download of segment {0} {1}".format(segment.sequence_number, size))
+                    size = "unknown size"
+                log.debug("Starting download of segment {0} ({1})".format(segment.sequence_number, size))
                 t = time.time()
                 for chunk in streamer.iter_content(chunk_size=chunk_size):
                     if self.closed:  # stop downloading the segment if interrupted
