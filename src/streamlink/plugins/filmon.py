@@ -1,23 +1,25 @@
-import re
 import logging
+import re
 import time
 
 from streamlink import StreamError
+from streamlink.buffers import RingBuffer
 from streamlink.compat import urlparse
 from streamlink.plugin import Plugin
 from streamlink.plugin.api import validate
-from streamlink.stream import HLSStream, hls_playlist
-from streamlink.stream.hls import HLSStreamWorker, HLSStreamReader, Sequence
+from streamlink.stream import HLSStream
+from streamlink.stream.hls import HLSSegmentGenerator
+from streamlink.stream.segmented import HTTPSegmentProcessor
 
 log = logging.getLogger(__name__)
 
 
-class FilmOnHLSStreamWorker(HLSStreamWorker):
-    def reload_playlist(self):
-        if self.closed:
-            return
+class FilmOnHLSSegmentGenerator(HLSSegmentGenerator):
+    def __init__(self, http, url, stream, **request_params):
+        self.stream = stream
+        super(FilmOnHLSSegmentGenerator, self).__init__(http, url, **request_params)
 
-        self.reader.buffer.wait_free()
+    def reload_manifest(self):
         log.debug("Reloading playlist")
 
         if self.stream.channel:
@@ -26,16 +28,12 @@ class FilmOnHLSStreamWorker(HLSStreamWorker):
                 # save the first netloc
                 self.stream._first_netloc = parsed.netloc
             # always use the first saved netloc
-            new_stream_url = parsed._replace(netloc=self.stream._first_netloc).geturl()
+            self.url = parsed._replace(netloc=self.stream._first_netloc).geturl()
         else:
-            new_stream_url = self.stream.url
+            self.url = self.stream.url
 
         try:
-            res = self.session.http.get(
-                new_stream_url,
-                exception=StreamError,
-                retries=self.playlist_reload_retries,
-                **self.reader.request_params)
+            return super(FilmOnHLSSegmentGenerator, self).reload_manifest()
         except StreamError as err:
             if (hasattr(self.stream, "watch_timeout")
                     and any(x in str(err) for x in ("403 Client Error",
@@ -45,29 +43,6 @@ class FilmOnHLSStreamWorker(HLSStreamWorker):
                 log.debug("Force reloading the channel playlist on error: {0}", err)
                 return
             raise err
-
-        try:
-            playlist = hls_playlist.load(res.text, res.url)
-        except ValueError as err:
-            raise StreamError(err)
-
-        if playlist.is_master:
-            raise StreamError("Attempted to play a variant playlist, use "
-                              "'hls://{0}' instead".format(self.stream.url))
-
-        if playlist.iframes_only:
-            raise StreamError("Streams containing I-frames only is not playable")
-
-        media_sequence = playlist.media_sequence or 0
-        sequences = [Sequence(media_sequence + i, s)
-                     for i, s in enumerate(playlist.segments)]
-
-        if sequences:
-            self.process_sequences(playlist, sequences)
-
-
-class FilmOnHLSStreamReader(HLSStreamReader):
-    __worker__ = FilmOnHLSStreamWorker
 
 
 class FilmOnHLS(HLSStream):
@@ -118,10 +93,25 @@ class FilmOnHLS(HLSStream):
         return url
 
     def open(self):
-        reader = FilmOnHLSStreamReader(self)
-        reader.open()
+        live_edge = self.session.get_option("hls-live-edge")
+        reload_retries = self.session.get_option("hls-playlist-reload-attempts")
+        duration_offset_start = int(self.start_offset + (self.session.get_option("hls-start-offset") or 0))
+        duration_limit = self.duration or (int(self.session.get_option("hls-duration") or 0) or None)
+        live_restart = self.force_restart or self.session.get_option("hls-live-restart")
+        ignore_names = self.session.get_option("hls-segment-ignore-names")
 
-        return reader
+        generator = FilmOnHLSSegmentGenerator(self.session.http,
+                                              live_edge=live_edge,
+                                              start_offset=duration_offset_start,
+                                              duration=duration_limit,
+                                              reload_attempts=reload_retries,
+                                              live_restart=live_restart,
+                                              ignore_names=ignore_names,
+                                              stream=self,
+                                              **self.args)
+        buffer = RingBuffer(self.session.get_option("ringbuffer-size"))
+        proc = HTTPSegmentProcessor(self.session.http, generator, buffer)
+        return proc.open()
 
 
 class FilmOnAPI(object):

@@ -183,7 +183,7 @@ class TwitchHLSSegmentGenerator(HLSSegmentGenerator):
         """
         return super(TwitchHLSSegmentGenerator, self).process_sequences(
             playlist,
-            filter(lambda s: not self.disable_ads or s.segment.scte35 is None, sequences)
+            list(filter(lambda s: not self.disable_ads or s.segment.scte35 is None, sequences))
         )
 
 

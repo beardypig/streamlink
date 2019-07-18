@@ -288,7 +288,7 @@ class M3U8Parser(object):
             'duration': duration,
             'title': title,
             'date': self.state.pop("date", None),
-            'map_': self.state.get("map"),
+            'map': self.state.get("map"),
             'key': self.state.get("key"),
             'discontinuity': self.state.pop("discontinuity", False)
         }
