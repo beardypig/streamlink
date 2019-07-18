@@ -170,14 +170,21 @@ class TwitchHLSSegmentGenerator(HLSSegmentGenerator):
         self.disable_ads = kwargs.pop("disable_ads", False)
         super(TwitchHLSSegmentGenerator, self).__init__(*args, **kwargs)
 
-    def parse_manifest(self, content, url):
+    def parse_manifest(self, content, url, **kwargs):
         # parse the playlist using the specialised Twitch parser
         return hls_playlist.load(content, url, parser=TwitchM3U8Parser)
 
-    def valid_sequence(self, sequence):
-        # in addition to the base checks, skip if ad segments if ad skipping is enabled
-        return (super(TwitchHLSSegmentGenerator, self).valid_sequence(sequence) and
-                (not self.disable_ads or sequence.segment.scte35 is None))
+    def process_sequences(self, playlist, sequences):
+        """
+        Override the default behaviour of process_sequences to remove ad segments
+        :param playlist: m3u8 playlist
+        :param sequences: list of sequences to process
+        :return: if the playlist changes since last reloads
+        """
+        return super(TwitchHLSSegmentGenerator, self).process_sequences(
+            playlist,
+            filter(lambda s: not self.disable_ads or s.segment.scte35 is None, sequences)
+        )
 
 
 class TwitchHLSStream(HLSStream):

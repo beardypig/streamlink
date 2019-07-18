@@ -5,6 +5,9 @@ from concurrent import futures
 from concurrent.futures import CancelledError
 from threading import Thread, Lock, Event
 from math import log2
+from contextlib import contextmanager
+
+from streamlink import StreamError
 
 try:
     import queue
@@ -208,8 +211,13 @@ class SegmentGenerator(object):
     def __init__(self):
         self._closed = Event()
 
+    def next_segments(self):
+        raise NotImplementedError
+
     def __iter__(self):
-        yield
+        while not self.closed:
+            for segment in self.next_segments():
+                yield segment
 
     def wait(self, seconds):
         """
@@ -219,6 +227,22 @@ class SegmentGenerator(object):
         time runs out normally.
         """
         return not self._closed.wait(seconds)
+
+    @contextmanager
+    def waiter(self, duration):
+        """
+        This code block will take at least duration seconds to run, if
+        needed a wait will be inserted at the end to ensure the run time.
+
+        The wait can be interrupted by another thread.
+
+        :param duration: the amount of time to wait
+        """
+        s = time.time()
+        yield
+        time_to_sleep = duration - (time.time() - s)
+        if time_to_sleep > 0:
+            self.wait(time_to_sleep)
 
     def close(self):
         self._closed.set()
@@ -244,7 +268,7 @@ class ManifestBasedSegmentGenerator(SegmentGenerator):
     @manifest_reload_time.setter
     def manifest_reload_time(self, value):
         # ensure that the reload time is never less than the minimum
-        self._manifest_reload_time = max(self.MIN_RELOAD_TIME, value)
+        self._manifest_reload_time = max(self.MIN_RELOAD_TIME, value or self.DEFAULT_RELOAD_TIME)
 
     def reload_manifest(self):
         raise NotImplementedError
@@ -252,8 +276,30 @@ class ManifestBasedSegmentGenerator(SegmentGenerator):
     def parse_manifest(self, content, url, **kwargs):
         raise NotImplementedError
 
-    def update_reload_time(self, changed):
+    def update_reload_time(self, current, manifest_changed):
         raise NotImplementedError
+
+    def next_segments(self):
+        raise NotImplementedError
+
+    def __iter__(self):
+        last_reload = None
+
+        while not self.closed:
+            with self.waiter(self.manifest_reload_time):
+                try:
+                    time_since_reload = time.time() - last_reload if last_reload else 0
+                    log.debug("Reloading playlist... (time since last reload {:.3g}s)".format(time_since_reload))
+                    changed = self.reload_manifest()
+                    last_reload = time.time()
+                    self.manifest_reload_time = self.update_reload_time(self.manifest_reload_time, changed)
+                    log.debug("Updated playlist refresh time to {0:.2f}s".format(self.manifest_reload_time))
+
+                except StreamError as err:
+                    log.warning("Failed to reload manifest: {0}", err)
+
+                for segment in self.next_segments():
+                    yield segment
 
 
 class SegmentError(Exception):
@@ -269,9 +315,10 @@ class SegmentProcessor(Thread):
         self.buffer = buffer
 
         self.threads = 5  # (os.cpu_count() or 1) * 5
+        self.timeout = 5.0
         self.fetch_executor = futures.ThreadPoolExecutor(max_workers=self.threads)
         self._filler = None
-        self._data_queue = queue.Queue(maxsize=self.threads - 1)
+        self._data_queue = queue.Queue(maxsize=100)
         self._queue_lock = Lock()
         self._started = Event()
 
@@ -336,11 +383,12 @@ class SegmentProcessor(Thread):
                 try:
                     future = self.fetch_executor.submit(self.fetcher, segment, buffer)
                     self.put((segment, buffer, future))
+                    log.debug("Queued segment #{}...".format(segment.sequence_number))
                 except RuntimeError:
                     return
 
         self.put((None, None, None))
-        log.debug("enqued FINAL marker")
+        log.debug("All segmented queued")
 
     def fetcher(self, segment, buffer):
         """
@@ -365,7 +413,7 @@ class SegmentProcessor(Thread):
                 self._data_queue.put(item, block=False)
                 return  # successfully added the item to the queue
             except queue.Full:
-                self.wait(1.0)
+                self.wait(0.1)
                 continue
 
     def open(self):

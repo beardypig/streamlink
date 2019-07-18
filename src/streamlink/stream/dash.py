@@ -10,7 +10,7 @@ from streamlink.buffers import RingBuffer
 from streamlink.compat import urlparse, urlunparse
 from streamlink.stream.dash_manifest import MPD, sleep_until, utc, freeze_timeline
 from streamlink.stream.ffmpegmux import FFMPEGMuxer
-from streamlink.stream.http import valid_args, normalize_key
+from streamlink.stream.http import valid_args, normalize_key, RangeHTTPSegmentGenerator
 from streamlink.stream.segmented import SegmentGenerator, HTTPSegmentProcessor, ManifestBasedSegmentGenerator, RangedHTTPSegment, HTTPSegment
 from streamlink.stream.stream import Stream
 from streamlink.utils import parse_xml
@@ -20,7 +20,7 @@ log = logging.getLogger(__name__)
 
 
 class DASHSegmentGenerator(ManifestBasedSegmentGenerator):
-    def __init__(self, http, mpd, representation_id, mime_type, live_edge=3, period_index=0, **request_params):
+    def __init__(self, http, mpd, representation_id, mime_type, live_edge=3, reload_attempts=1, period_index=0, **request_params):
         SegmentGenerator.__init__(self)
 
         self.http = http
@@ -29,6 +29,7 @@ class DASHSegmentGenerator(ManifestBasedSegmentGenerator):
         self.mime_type = mime_type
         self.live_edge = live_edge
         self.period_index = period_index
+        self.reload_attempts = reload_attempts
         self.request_params = request_params
 
     def parse_manifest(self, content, url, base_url=None, timelines=None, **kwargs):
@@ -54,13 +55,13 @@ class DASHSegmentGenerator(ManifestBasedSegmentGenerator):
             return changed
         return False
 
-    def update_reload_time(self, changed):
+    def update_reload_time(self, current, manifest_changed):
         reload_wait = max(self.mpd.minimumUpdatePeriod.total_seconds(),
-                          self.mpd.periods[self.period_index].duration.total_seconds()) or self.DEFAULT_RELOAD_TIME
-        if not changed:
-            self.manifest_reload_time /= 2.0
+                          self.mpd.periods[self.period_index].duration.total_seconds())
+        if not manifest_changed:
+            return current / 2.0
         else:
-            self.manifest_reload_time = max(reload_wait * (self.live_edge - 1), reload_wait) * 0.8
+            return max(reload_wait * (self.live_edge - 1), reload_wait) * 0.8
 
     def __iter__(self):
         init = True
@@ -85,7 +86,10 @@ class DASHSegmentGenerator(ManifestBasedSegmentGenerator):
                                                 length=segment.range.length,
                                                 **self.request_params)
                     else:
-                        yield HTTPSegment(segment.url, **self.request_params)
+                        # if the segment is big (for example in the SegmentBase case),
+                        # it can be split up and downloaded in parallel
+                        for seg in RangeHTTPSegmentGenerator(self.http, segment.url, **self.request_params):
+                            yield seg
             if self.mpd.type == "dynamic":
                 changed = self.reload_manifest()
                 self.update_reload_time(changed)

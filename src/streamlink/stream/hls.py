@@ -1,6 +1,7 @@
 import logging
 import re
 import struct
+import time
 from collections import namedtuple
 
 from streamlink.buffers import RingBuffer
@@ -26,7 +27,7 @@ def num_to_iv(n):
 class HLSSegmentGenerator(ManifestBasedSegmentGenerator):
     def __init__(self, http, url, live_edge=3, start_offset=0, duration=None, reload_attempts=1, live_restart=False,
                  ignore_names=None, **request_params):
-        SegmentGenerator.__init__(self)
+        super(HLSSegmentGenerator, self).__init__()
 
         self.http = http
         self.url = url
@@ -47,6 +48,7 @@ class HLSSegmentGenerator(ManifestBasedSegmentGenerator):
         self.request_params = request_params
         self.key_uri = None
         self.key_data = b""
+        self.total_duration = 0
 
         if self.ignore_names:
             # creates a regex from a list of segment names,
@@ -76,14 +78,14 @@ class HLSSegmentGenerator(ManifestBasedSegmentGenerator):
                 self.duration_offset_start, self.duration_limit,
                 self.playlist_sequence, self.playlist_end)
 
-    def update_reload_time(self, changed):
+    def update_reload_time(self, current, manifest_changed):
         last_sequence = self.playlist_sequences and self.playlist_sequences[-1]
 
         segment_duration = (self.playlist.target_duration or last_sequence.segment.duration)
 
-        if not changed:
+        if not manifest_changed:
             # half the reload wait time if the playlist doesn't change
-            self.playlist_reload_time /= 2.0
+            return current / 2.0
         elif segment_duration:  # this should be the case after the first reload
             """
             According to the HLS spec the playlist shouldn't be reloaded more frequently than once per TARGET DURATION.
@@ -91,19 +93,13 @@ class HLSSegmentGenerator(ManifestBasedSegmentGenerator):
             If we are on a regular live edge (for example, 3), we can reload a bit slower - 80% of 2 x TARGET DURATION should
             ensure we see changes to the playlist in time.
             """
-            self.playlist_reload_time = max(segment_duration * (self.live_edge - 1), segment_duration) * 0.8
-        else:
-            # if there are no segments, and the playlist has not changed fall back to the default
-            self.playlist_reload_time = self.DEFAULT_RELOAD_TIME
-
-        log.debug("Updated playlist refresh time to {0:.2f}s".format(self.playlist_reload_time))
+            return max(segment_duration * (self.live_edge - 1), segment_duration) * 0.8
 
     def parse_manifest(self, content, url, **kwargs):
         return hls_playlist.load(content, url, **kwargs)
 
     def reload_manifest(self):
         if not self.closed:
-            log.debug("Reloading playlist")
             res = self.http.get(self.url,
                                 exception=StreamError,
                                 retries=self.playlist_reload_retries,
@@ -130,7 +126,7 @@ class HLSSegmentGenerator(ManifestBasedSegmentGenerator):
             if sequences:
                 changed = self.process_sequences(self.playlist, sequences)
 
-            self.update_reload_time(changed)
+            return changed
 
     def process_sequences(self, playlist, sequences):
         first_sequence, last_sequence = sequences[0], sequences[-1]
@@ -155,9 +151,6 @@ class HLSSegmentGenerator(ManifestBasedSegmentGenerator):
 
         return self.playlist_changed
 
-    def valid_sequence(self, sequence):
-        return self.ignore_names and self.ignore_names_re.search(sequence.segment.uri)
-
     def duration_to_sequence(self, duration, sequences):
         d = 0
         default = -1
@@ -176,69 +169,63 @@ class HLSSegmentGenerator(ManifestBasedSegmentGenerator):
     def _future_sequence(self, sequence):
         return sequence.num >= self.playlist_sequence
 
-    def __iter__(self):
-        total_duration = 0
+    def _ignore_name(self, sequence):
+        return self.ignore_names and self.ignore_names_re.search(sequence.segment.uri)
 
-        self.reload_manifest()
+    def next_segments(self):
+        future_sequences = list(filter(self._future_sequence, self.playlist_sequences))
+        log.debug("We are behind live by {} segments, live edge is set to {}".format(len(future_sequences), self.live_edge))
+        for sequence in future_sequences:
+            # skip ignored segment names
+            if self._ignore_name(sequence):
+                log.debug("Skipping segment {0}".format(sequence.num))
+                continue
 
-        while not self.closed:
-            for sequence in filter(self._future_sequence, self.playlist_sequences):
-                # skip ignored segment names
-                if self.valid_sequence(sequence):
-                    log.debug("Skipping segment {0}".format(sequence.num))
-                    continue
+            log.debug("Adding segment {0} to queue", sequence.num)
+            key = sequence.segment.key
 
-                log.debug("Adding segment {0} to queue", sequence.num)
-                key = sequence.segment.key
+            if key and key.method != "NONE":
+                if key.method != "AES-128":
+                    raise StreamError("Unable to decrypt cipher {0}", key.method)
 
-                if key and key.method != "NONE":
-                    if key.method != "AES-128":
-                        raise StreamError("Unable to decrypt cipher {0}", key.method)
+                if not key.uri:
+                    raise StreamError("Missing URI to decryption key")
 
-                    if not key.uri:
-                        raise StreamError("Missing URI to decryption key")
+                if self.key_uri != key.uri:
+                    res = self.http.get(key.uri, exception=StreamError,
+                                        retries=self.playlist_reload_retries,
+                                        **self.request_params)
+                    self.key_data = res.content
+                    self.key_uri = key.uri
 
-                    if self.key_uri != key.uri:
-                        res = self.http.get(key.uri, exception=StreamError,
-                                            retries=self.playlist_reload_retries,
-                                            **self.request_params)
-                        self.key_data = res.content
-                        self.key_uri = key.uri
+                iv = key.iv or num_to_iv(sequence.num)
 
-                    iv = key.iv or num_to_iv(sequence.num)
+                # Pad IV if needed
+                iv = b"\x00" * (16 - len(iv)) + iv
 
-                    # Pad IV if needed
-                    iv = b"\x00" * (16 - len(iv)) + iv
+                yield AESEncryptedHTTPSegment(sequence.segment.uri,
+                                              self.key_data, iv,
+                                              **self.request_params)
 
-                    yield AESEncryptedHTTPSegment(sequence.segment.uri,
-                                                  self.key_data, iv,
-                                                  **self.request_params)
+            elif sequence.segment.byterange:
+                yield RangedHTTPSegment(sequence.segment.uri,
+                                        offset=sequence.segment.byterange.offset,
+                                        length=sequence.segment.byterange.range,
+                                        **self.request_params)
+            else:
+                yield HTTPSegment(sequence.segment.uri, **self.request_params)
 
-                elif sequence.segment.byterange:
-                    yield RangedHTTPSegment(sequence.segment.uri,
-                                            offset=sequence.segment.byterange.offset,
-                                            length=sequence.segment.byterange.range,
-                                            **self.request_params)
-                else:
-                    yield HTTPSegment(sequence.segment.uri, **self.request_params)
+            self.total_duration += sequence.segment.duration
+            if self.duration_limit and self.total_duration >= self.duration_limit:
+                log.info("Stopping stream early after {0}".format(self.duration_limit))
+                return
 
-                total_duration += sequence.segment.duration
-                if self.duration_limit and total_duration >= self.duration_limit:
-                    log.info("Stopping stream early after {0}".format(self.duration_limit))
-                    return
+            # End of stream
+            stream_end = self.playlist_end and sequence.num >= self.playlist_end
+            if self.closed or stream_end:
+                raise StopIteration
 
-                # End of stream
-                stream_end = self.playlist_end and sequence.num >= self.playlist_end
-                if self.closed or stream_end:
-                    return
-
-                self.playlist_sequence = sequence.num + 1
-
-            if self.wait(self.playlist_reload_time):
-                try:
-                    self.reload_manifest()
-                except StreamError as err:
-                    log.warning("Failed to reload playlist: {0}", err)
+            self.playlist_sequence = sequence.num + 1
 
 
 class HLSStream(HTTPStream):

@@ -1,15 +1,17 @@
 import copy
+import itertools
+import logging
+import math
 
 import requests
 
-from streamlink.compat import getargspec
-from streamlink.exceptions import StreamError
-from streamlink.stream import Stream
-from streamlink.stream.wrappers import StreamIOThreadWrapper, StreamIOIterWrapper
 from streamlink.buffers import RingBuffer
+from streamlink.compat import getargspec
 from streamlink.stream.segmented import SegmentGenerator, HTTPSegment, RangedHTTPSegment, \
     HTTPSegmentProcessor
 from .stream import Stream
+
+log = logging.getLogger(__name__)
 
 
 def normalize_key(keyval):
@@ -26,34 +28,44 @@ def valid_args(args):
 
 
 class RangeHTTPSegmentGenerator(SegmentGenerator):
-    def __init__(self, session, url, **request_args):
+    """
+    Splits a single HTTP stream in to multiple chunks using Range requests
+    """
+    def __init__(self, http, url, **request_args):
         SegmentGenerator.__init__(self)
-        self.session = session
+        self.http = http
         self.url = url
         self.request_args = request_args
+        self.part_size = 3 * 1024 * 1024
 
     def supports_range(self):
         request_args = copy.deepcopy(self.request_args)
         _ = request_args.pop("method", None)
         _ = request_args.pop("stream", None)
-        req = self.session.request(method="HEAD", url=self.url, **request_args)
+        req = self.http.request(method="HEAD", url=self.url, **request_args)
         return ("bytes" in req.headers.get("Accept-Ranges", ""),
                 int(req.headers.get("Content-length", 0)))
 
-    def __iter__(self):
+    def next_segments(self):
         supports_range, length = self.supports_range()
-        range_size = 3 * 1024 * 1024
-        if length:
-            range_size = max(length / 10, range_size)  # ~10 parts (no smaller than 3MB)
 
-        if supports_range and length > 2 * range_size:
-            parts = int(length / range_size)
-            for i in range(0, parts):
-                yield RangedHTTPSegment(self.url, offset=i * range_size, length=range_size, **self.request_args)
-            if parts * range_size < length-1:
-                yield RangedHTTPSegment(self.url, offset=parts * range_size, **self.request_args)
+        if supports_range:
+            parts = math.ceil(length / self.part_size)
+            log.debug("Split segment in to {} parts".format(parts))
+
+            if parts > 1:
+                ranges = [(offset, self.part_size) if offset + self.part_size - 1 < length else (offset, None) for offset in range(0, length, self.part_size)]
+                if length - ranges[-1][0] < 10*1024 < length:
+                    ranges.pop()
+                    ranges[-1] = (ranges[-1][0], None)
+                for offset, part_length in ranges:
+                    yield RangedHTTPSegment(self.url, offset=offset, length=part_length, **self.request_args)
+            else:
+                yield HTTPSegment(self.url, **self.request_args)
         else:
             yield HTTPSegment(self.url, **self.request_args)
+
+        raise StopIteration
 
 
 class HTTPStream(Stream):
