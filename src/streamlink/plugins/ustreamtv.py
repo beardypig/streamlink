@@ -3,14 +3,16 @@ import errno
 import json
 import logging
 import re
-import websocket
-
+import traceback
 from collections import deque, namedtuple
 from random import randint
 from socket import error as SocketError
 from threading import Thread, Event
 from time import sleep
 
+import websocket
+
+from streamlink.buffers import RingBuffer
 from streamlink.compat import range, urljoin, urlunparse, urlparse, unquote_plus
 from streamlink.exceptions import PluginError, StreamError
 from streamlink.plugin import Plugin, PluginArguments, PluginArgument
@@ -18,9 +20,9 @@ from streamlink.plugin.api import useragents, validate
 from streamlink.stream import Stream
 from streamlink.stream.dash_manifest import sleep_until, utc
 from streamlink.stream.flvconcat import FLVTagConcat
-from streamlink.stream.segmented import (
-    SegmentedStreamReader, SegmentedStreamWriter, SegmentedStreamWorker
-)
+from streamlink.stream.segmented import (SegmentGenerator,
+                                         HTTPSegment,
+                                         HTTPSegmentProcessor)
 from streamlink.utils import parse_json
 
 log = logging.getLogger(__name__)
@@ -156,61 +158,22 @@ class UHSClient(object):
         return self._host or self.API_URL.format(randint(0, 0xffffff), self.media_id, self.application, self._cluster)
 
 
-class UHSStreamWriter(SegmentedStreamWriter):
-    def __init__(self, *args, **kwargs):
-        SegmentedStreamWriter.__init__(self, *args, **kwargs)
-
-        self.concater = FLVTagConcat(tags=[],
-                                     flatten_timestamps=True,
-                                     sync_headers=True)
-
-    def fetch(self, chunk, retries=None):
-        if not retries or self.closed:
-            return
-
-        try:
-            now = datetime.datetime.now(tz=utc)
-            if chunk.available_at > now:
-                time_to_wait = (chunk.available_at - now).total_seconds()
-                log.debug("Waiting for chunk: {fname} ({wait:.01f}s)".format(fname=chunk.num,
-                                                                             wait=time_to_wait))
-                sleep_until(chunk.available_at)
-
-            return self.session.http.get(chunk.url,
-                                         timeout=self.timeout,
-                                         exception=StreamError)
-        except StreamError as err:
-            log.error("Failed to open chunk {0}: {1}", chunk.num, err)
-            return self.fetch(chunk, retries - 1)
-
-    def write(self, chunk, res, chunk_size=8192):
-        try:
-            for data in self.concater.iter_chunks(buf=res.content,
-                                                  skip_header=False):
-                self.reader.buffer.write(data)
-                if self.closed:
-                    return
-            else:
-                log.debug("Download of chunk {0} complete", chunk.num)
-        except IOError as err:
-            log.error("Failed to read chunk {0}: {1}", chunk.num, err)
-
-
-class UHSStreamWorker(SegmentedStreamWorker):
-    def __init__(self, *args, **kwargs):
-        SegmentedStreamWorker.__init__(self, *args, **kwargs)
+class UHSSegmentGenerator(SegmentGenerator):
+    def __init__(self, stream):
+        super(UHSSegmentGenerator, self).__init__()
+        self.stream = stream
         self.chunks = []
         self.chunks_reload_time = 5
 
         self.chunk_id = self.stream.first_chunk_data.chunk_id
         self.template_url = self.stream.template_url
 
-        self.process_chunks()
+        self.refresh_chunks()
         if self.chunks:
             log.debug("First Chunk: {0}; Last Chunk: {1}",
                       self.chunks[0].num, self.chunks[-1].num)
 
-    def process_chunks(self):
+    def refresh_chunks(self):
         chunk_data = []
         if self.chunk_id == self.stream.first_chunk_data.chunk_id:
             chunk_data = self.stream.first_chunk_data
@@ -225,7 +188,7 @@ class UHSStreamWorker(SegmentedStreamWorker):
                 start = int(k)
                 end = int(k) + 10
                 for i in range(start, end):
-                    if i > chunk_data.chunk_id and chunk_data.chunk_id != 0:
+                    if i > chunk_data.chunk_id != 0:
                         # Live: id is higher as chunk_data.chunk_id
                         count += chunk_data.chunk_time / 1000
                         available_at = (chunk_data.current_timestamp
@@ -242,30 +205,43 @@ class UHSStreamWorker(SegmentedStreamWorker):
     def valid_chunk(self, chunk):
         return chunk.num >= self.chunk_id
 
-    def iter_segments(self):
-        while not self.closed:
-            for chunk in filter(self.valid_chunk, self.chunks):
-                log.debug("Adding chunk {0} to queue", chunk.num)
-                yield chunk
-                # End of stream
-                if self.closed:
-                    return
+    def next_segments(self):
+        for chunk in filter(self.valid_chunk, self.chunks):
+            now = datetime.datetime.now(tz=utc)
+            if chunk.available_at > now:
+                time_to_wait = (chunk.available_at - now).total_seconds()
+                log.debug("Waiting for chunk: {fname} ({wait:.01f}s)".format(fname=chunk.num,
+                                                                             wait=time_to_wait))
+                sleep_until(chunk.available_at)
 
-                self.chunk_id = int(chunk.num) + 1
+            yield HTTPSegment(chunk.url)
+            self.chunk_id = int(chunk.num) + 1
 
-            if self.wait(self.chunks_reload_time):
-                try:
-                    self.process_chunks()
-                except StreamError as err:
-                    log.warning("Failed to process module info: {0}", err)
+        if self.wait(self.chunks_reload_time):
+            try:
+                self.refresh_chunks()
+            except StreamError as err:
+                log.warning("Failed to process module info: {0}", err)
+
+    def close(self):
+        self.stream.poller.stop()
+        super(UHSSegmentGenerator, self).close()
 
 
-class UHSStreamReader(SegmentedStreamReader):
-    __worker__ = UHSStreamWorker
-    __writer__ = UHSStreamWriter
+class UHSSegmentProcessor(HTTPSegmentProcessor):
+    def __init__(self, http, segment_generator, buffer, **kwargs):
+        super(UHSSegmentProcessor, self).__init__(http, segment_generator, buffer, **kwargs)
+        self.flv_concat = FLVTagConcat(tags=[],
+                                       flatten_timestamps=True,
+                                       sync_headers=True)
 
-    def __init__(self, stream, *args, **kwargs):
-        SegmentedStreamReader.__init__(self, stream, *args, **kwargs)
+    def fetch(self, segment, chunk_size=128 * 1024):
+        # requires the complete segment because the flashmedia module is super broken for streams
+        res = super(UHSSegmentProcessor, self).fetch(segment, chunk_size=chunk_size)
+        for chunk in self.flv_concat.iter_chunks(buf=b''.join(res), skip_header=False):
+            if self.closed:
+                return
+            yield chunk
 
 
 class UHSStream(Stream):
@@ -350,11 +326,13 @@ class UHSStream(Stream):
     def open(self):
         self.poller.start()
         log.debug("Starting API polling thread")
-        reader = UHSStreamReader(self)
-        reader.open()
-        reader.close = self.poller.stopper(reader.close)
 
-        return reader
+        generator = UHSSegmentGenerator(self)
+        buffer = RingBuffer(self.session.get_option("ringbuffer-size"))
+        proc = UHSSegmentProcessor(self.session.http, generator, buffer)
+        # TODO: stop hook?
+        # reader.close = self.poller.stopper(reader.close)
+        return proc.open()
 
 
 class UStreamTV(Plugin):

@@ -352,7 +352,7 @@ class SegmentProcessor(Thread):
                 # copy from the segment buffer to the output buffer
                 try:
                     for chunk in buffer.read_iter(16 * 1024):
-                        self.buffer.write(chunk)
+                        self.write(chunk)
                     log.debug("Segment {0} written to output buffer".format(segment.sequence_number))
                     break
                 except IOError:
@@ -432,6 +432,9 @@ class SegmentProcessor(Thread):
             return b""
 
         return self.buffer.read(size, timeout=self.timeout)
+
+    def write(self, data):
+        return self.buffer.write(data)
 
     def close(self):
         self._closed.set()
