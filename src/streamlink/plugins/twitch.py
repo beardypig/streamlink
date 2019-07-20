@@ -146,7 +146,8 @@ class TwitchM3U8Parser(M3U8Parser):
         self.state["scte35"] = False
 
     def parse_tag_ext_x_twitch_prefetch(self, value):
-        self.m3u8.segments.append(self.get_segment(uri=self.uri(value), prefetch=True))
+        if self.m3u8.segments:
+            self.m3u8.segments.append(self.m3u8.segments[-1]._replace(uri=self.uri(value), prefetch=True))
 
     def get_segment(self, **attrs):
         duration, title = self.state.pop("extinf", (0, None))
