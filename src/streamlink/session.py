@@ -1,9 +1,12 @@
 import logging
+import pickle
 import pkgutil
 import sys
 import traceback
 import types
 from collections import OrderedDict
+import os.path
+import requests
 
 try:
     from importlib.machinery import PathFinder
@@ -11,8 +14,6 @@ try:
 except ImportError:
     import imp
     has_PathFinder = False
-
-import requests
 
 from streamlink.logger import StreamlinkLogger, Logger
 from streamlink.plugin import Plugin
@@ -27,6 +28,44 @@ from .plugin import api
 # Ensure that the Logger class returned is Streamslink's for using the API (for backwards compatibility)
 logging.setLoggerClass(StreamlinkLogger)
 log = logging.getLogger(__name__)
+
+
+class SpecCache(object):
+    def __init__(self, path):
+        self._cache = None
+        self.path = path
+        self.cache_path = os.path.join(self.path, "plugin.cache")
+        self.mtime = 0
+
+    def load(self):
+        if os.path.exists(self.cache_path):
+            self.mtime = os.path.getmtime(self.cache_path)
+            sys.path.append(self.path)
+            with open(self.cache_path, "rb") as f:
+                log.debug("Loading spec cache: {0}".format(self.cache_path))
+                self._cache = pickle.load(f)
+            sys.path.pop()
+        else:
+            self._cache = {}
+
+    def save(self):
+        with open(os.path.join(self.path, "plugin.cache"), "wb") as f:
+            self._cache = pickle.dump(self._cache or {}, f)
+        self.mtime = os.path.getmtime(self.cache_path)
+
+    def __getitem__(self, name):
+        if self._cache is None:
+            self.load()
+        spec = self._cache.get(name)
+        # if the plugin file is newer than the cache, then act as if the file is not cached
+        if spec and os.path.getmtime(spec.origin) > self.mtime:
+            raise KeyError
+        return self._cache[name]
+
+    def __setitem__(self, name, spec):
+        if self._cache is None:
+            self.load()
+        self._cache[name] = spec
 
 
 def print_small_exception(start_after):
@@ -89,6 +128,7 @@ class Streamlink(object):
         if options:
             self.options.update(options)
         self.plugins = OrderedDict({})
+        self._spec_cache = {}
         self.load_builtin_plugins()
         self._logger = None
 
@@ -469,10 +509,19 @@ class Streamlink(object):
                 if plugin.module in self.plugins:
                     log.debug("Plugin {0} is being overridden".format(plugin.module))
                 self.plugins[plugin.module] = plugin
+        if path in self._spec_cache:
+            self._spec_cache[path].save()
 
     if has_PathFinder:
         def _load_module(self, path, name):
-            spec = PathFinder.find_spec(name, [path])
+            if path not in self._spec_cache:
+                self._spec_cache[path] = SpecCache(path)
+            try:
+                spec = self._spec_cache[path][name]
+            except KeyError:
+                spec = PathFinder.find_spec(name, [path])
+
+            self._spec_cache[path][name] = spec
             mod = types.ModuleType(spec.name)
             mod.__loader__ = spec.loader
             mod.__file__ = spec.origin
