@@ -36,36 +36,44 @@ class SpecCache(object):
         self.path = path
         self.cache_path = os.path.join(self.path, "plugin.cache")
         self.mtime = 0
+        self.dirty = False
+
+    @property
+    def cache(self):
+        if self._cache is None:
+            self._cache = self.load()
+        return self._cache
 
     def load(self):
+        r = {}
         if os.path.exists(self.cache_path):
             self.mtime = os.path.getmtime(self.cache_path)
             sys.path.append(self.path)
             with open(self.cache_path, "rb") as f:
                 log.debug("Loading spec cache: {0}".format(self.cache_path))
-                self._cache = pickle.load(f)
+                r = pickle.load(f)
             sys.path.pop()
-        else:
-            self._cache = {}
+        self.dirty = False
+        return r
 
     def save(self):
-        with open(os.path.join(self.path, "plugin.cache"), "wb") as f:
-            self._cache = pickle.dump(self._cache or {}, f)
-        self.mtime = os.path.getmtime(self.cache_path)
+        # only save if the cache has been modified
+        if self.dirty:
+            with open(self.cache_path, "wb") as f:
+                pickle.dump(self.cache, f)
+            self.mtime = os.path.getmtime(self.cache_path)
+            self.dirty = False
 
     def __getitem__(self, name):
-        if self._cache is None:
-            self.load()
-        spec = self._cache.get(name)
+        spec = self.cache.get(name)
         # if the plugin file is newer than the cache, then act as if the file is not cached
-        if spec and os.path.getmtime(spec.origin) > self.mtime:
+        if not spec or os.path.getmtime(spec.origin) > self.mtime:
             raise KeyError
-        return self._cache[name]
+        return spec
 
     def __setitem__(self, name, spec):
-        if self._cache is None:
-            self.load()
-        self._cache[name] = spec
+        self.cache[name] = spec
+        self.dirty = True
 
 
 def print_small_exception(start_after):
@@ -520,8 +528,9 @@ class Streamlink(object):
                 spec = self._spec_cache[path][name]
             except KeyError:
                 spec = PathFinder.find_spec(name, [path])
+                # update the spec in the cache
+                self._spec_cache[path][name] = spec
 
-            self._spec_cache[path][name] = spec
             mod = types.ModuleType(spec.name)
             mod.__loader__ = spec.loader
             mod.__file__ = spec.origin
