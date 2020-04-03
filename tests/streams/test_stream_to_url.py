@@ -1,5 +1,4 @@
 from streamlink import Streamlink
-from streamlink.plugins.filmon import FilmOnHLS
 from streamlink.stream import AkamaiHDStream
 from streamlink.stream import HDSStream
 from streamlink.stream import HLSStream
@@ -55,6 +54,7 @@ class TestStreamToURL(unittest.TestCase):
     @patch("time.time")
     @patch("streamlink.plugins.filmon.FilmOnHLS.url", new_callable=PropertyMock)
     def test_filmon_stream(self, url, time):
+        from streamlink.plugins.filmon import FilmOnHLS
         stream = FilmOnHLS(self.session, channel="test")
         url.return_value = "http://filmon.test.se/test.m3u8"
         stream.watch_timeout = 10
@@ -67,6 +67,7 @@ class TestStreamToURL(unittest.TestCase):
     @patch("time.time")
     @patch("streamlink.plugins.filmon.FilmOnHLS.url", new_callable=PropertyMock)
     def test_filmon_expired_stream(self, url, time):
+        from streamlink.plugins.filmon import FilmOnHLS
         stream = FilmOnHLS(self.session, channel="test")
         url.return_value = "http://filmon.test.se/test.m3u8"
         stream.watch_timeout = 0

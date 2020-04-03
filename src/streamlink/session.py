@@ -452,20 +452,22 @@ class Streamlink(object):
     def load_builtin_plugins(self):
         self.load_plugins(plugins.__path__[0])
 
-    def load_plugins(self, path):
+    def load_plugins(self, path, prefix="streamlink.plugins."):
         """Attempt to load plugins from the path specified.
 
         :param path: full path to a directory where to look for plugins
+        :param prefix: prefix for the module name
         """
         user_input_requester = self.get_option("user-input-requester")
-        for (loader, name, _) in pkgutil.iter_modules([path], "streamlink.plugins."):
+        for (loader, name, _) in pkgutil.iter_modules([path], prefix):
+            short_name = name[len(prefix):]
             try:
                 mod = loader.find_module(name).load_module(name)
             except ImportError:
                 log.exception("Failed to load plugin {0} from {1}\n".format(name, path))
                 continue
             if hasattr(mod, "__plugin__") and issubclass(mod.__plugin__, Plugin):
-                mod.__plugin__.bind(self, name, user_input_requester)
+                mod.__plugin__.bind(self, short_name, user_input_requester)
                 if mod.__plugin__.module in self.plugins:
                     log.debug("Plugin {0} is being overridden by {1}".format(mod.__plugin__.module, mod.__file__))
                 self.plugins[mod.__plugin__.module] = mod.__plugin__

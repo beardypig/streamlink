@@ -68,6 +68,8 @@ class TestPluginTVPlayer(unittest.TestCase):
             "test": HLSStream(self.session, "http://test.se/stream1")
         }
 
+        # must be re-imported because the original import is invalidated by the plugin loading import
+        from streamlink.plugins.tvplayer import TVPlayer
         TVPlayer.bind(self.session, "test.tvplayer")
         plugin = TVPlayer("http://tvplayer.com/watch/dave")
 
@@ -100,6 +102,8 @@ class TestPluginTVPlayer(unittest.TestCase):
         """
         self.session.http.get.return_value = page_resp
 
+        # must be re-imported because the original import is invalidated by the plugin loading import
+        from streamlink.plugins.tvplayer import TVPlayer
         TVPlayer.bind(self.session, "test.tvplayer")
         plugin = TVPlayer("http://tvplayer.com/watch/dave")
 
