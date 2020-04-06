@@ -3,8 +3,7 @@ import re
 from streamlink.plugin import Plugin
 from streamlink.plugin.api import validate
 from streamlink.stream import HLSStream, HTTPStream, RTMPStream
-from streamlink.utils import parse_json
-from streamlink.plugins.common_jwplayer import _js_to_json
+from streamlink.utils import jsonutil
 
 
 class TV5Monde(Plugin):
@@ -13,8 +12,7 @@ class TV5Monde(Plugin):
     _videos_embed_re = re.compile(r'(?:file:\s*|src=)"(?P<embed>.+?\.mp4|.+?/embed/.+?)"')
 
     _videos_schema = validate.Schema(
-        validate.transform(_js_to_json),
-        validate.transform(parse_json),
+        validate.transform(jsonutil.from_js),
         validate.all([
             validate.any(
                 validate.Schema(

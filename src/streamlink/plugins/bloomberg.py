@@ -1,11 +1,10 @@
 import logging
 import re
-from functools import partial
 
 from streamlink.plugin import Plugin
 from streamlink.plugin.api import validate, useragents
 from streamlink.stream import HDSStream, HLSStream, HTTPStream
-from streamlink.utils import parse_json, update_scheme
+from streamlink.utils import parse_json, update_scheme, jsonutil
 
 log = logging.getLogger(__name__)
 
@@ -31,7 +30,6 @@ class Bloomberg(Plugin):
         )
 ''', re.VERBOSE)
     _live_player_re = re.compile(r'{APP_BUNDLE:"(?P<live_player_url>.+?/app.js)"')
-    _js_to_json_re = partial(re.compile(r'(\w+):(["\']|\d?\.?\d+,|true|false|\[|{)').sub, r'"\1":\2')
     _mp4_bitrate_re = re.compile(r'.*_(?P<bitrate>[0-9]+)\.mp4')
     _preload_state_re = re.compile(r'<script>\s*window.__PRELOADED_STATE__\s*=\s*({.+});?\s*</script>')
     _live_stream_info_module_id_re = re.compile(
@@ -40,9 +38,7 @@ class Bloomberg(Plugin):
     _live_stream_info_re = r'],{id}:\[function\(.+var n=({{.+}});r.default=n}},{{"[^"]+":\d+}}],{next}:\['
 
     _live_streams_schema = validate.Schema(
-        validate.transform(_js_to_json_re),
-        validate.transform(lambda x: x.replace(':.', ':0.')),
-        validate.transform(parse_json),
+        validate.transform(jsonutil.from_js),
         validate.Schema({
             validate.text: {
                 validate.optional('cdns'): validate.all(
