@@ -218,12 +218,14 @@ class HLSSegmentGenerator(ManifestBasedSegmentGenerator):
             self.total_duration += sequence.segment.duration
             if self.duration_limit and self.total_duration >= self.duration_limit:
                 log.info("Stopping stream early after {0}".format(self.duration_limit))
+                self.close()
                 return
 
             # End of stream
             stream_end = self.playlist_end and sequence.num >= self.playlist_end
             if self.closed or stream_end:
-                raise StopIteration
+                self.close()
+                return
 
             self.playlist_sequence = sequence.num + 1
 
@@ -260,6 +262,9 @@ class HLSStream(HTTPStream):
 
         return json
 
+    def create_segment_generator(self, *args, **kwargs):
+        return HLSSegmentGenerator(*args, **kwargs)
+
     def open(self):
         live_edge = self.session.get_option("hls-live-edge")
         reload_retries = self.session.get_option("hls-playlist-reload-attempts")
@@ -268,14 +273,14 @@ class HLSStream(HTTPStream):
         live_restart = self.force_restart or self.session.get_option("hls-live-restart")
         ignore_names = self.session.get_option("hls-segment-ignore-names")
 
-        generator = HLSSegmentGenerator(self.session.http,
-                                        live_edge=live_edge,
-                                        start_offset=duration_offset_start,
-                                        duration=duration_limit,
-                                        reload_attempts=reload_retries,
-                                        live_restart=live_restart,
-                                        ignore_names=ignore_names,
-                                        **self.args)
+        generator = self.create_segment_generator(self.session.http,
+                                                  live_edge=live_edge,
+                                                  start_offset=duration_offset_start,
+                                                  duration=duration_limit,
+                                                  reload_attempts=reload_retries,
+                                                  live_restart=live_restart,
+                                                  ignore_names=ignore_names,
+                                                  **self.args)
         buffer = RingBuffer(self.session.get_option("ringbuffer-size"))
         proc = HTTPSegmentProcessor(self.session.http, generator, buffer)
         return proc.open()
@@ -337,13 +342,13 @@ class HLSStream(HTTPStream):
                 # if the media is "audoselect" and it better matches the users preferences, use that
                 # instead of default
                 if not default_audio and (media.autoselect and locale.equivalent(
-                        language=media.language)):
+                    language=media.language)):
                     default_audio = [media]
 
                 # select the first audio stream that matches the users explict language selection
                 if (('*' in audio_select or media.language in audio_select or media.name in audio_select)
-                        or ((not preferred_audio or media.default) and locale.explicit and locale.equivalent(
-                            language=media.language))):
+                    or ((not preferred_audio or media.default) and locale.explicit and locale.equivalent(
+                        language=media.language))):
                     preferred_audio.append(media)
 
             # final fallback on the first audio stream listed
@@ -402,11 +407,11 @@ class HLSStream(HTTPStream):
             if external_audio and FFMPEGMuxer.is_usable(session_):
                 external_audio_msg = u", ".join([
                     u"(language={0}, name={1})".format(x.language,
-                                                      (x.name or "N/A"))
+                                                       (x.name or "N/A"))
                     for x in external_audio
                 ])
                 log.debug(u"Using external audio tracks for stream {0} {1}".format(
-                          stream_name, external_audio_msg))
+                    stream_name, external_audio_msg))
 
                 stream = MuxedHLSStream(session_,
                                         video=playlist.uri,

@@ -289,11 +289,11 @@ class ManifestBasedSegmentGenerator(SegmentGenerator):
             with self.waiter(self.manifest_reload_time):
                 try:
                     time_since_reload = time.time() - last_reload if last_reload else 0
-                    log.debug("Reloading playlist... (time since last reload {:.3g}s)".format(time_since_reload))
+                    log.trace("Reloading playlist... (time since last reload {:.3g}s)".format(time_since_reload))
                     changed = self.reload_manifest()
                     last_reload = time.time()
                     self.manifest_reload_time = self.update_reload_time(self.manifest_reload_time, changed)
-                    log.debug("Updated playlist refresh time to {0:.2f}s".format(self.manifest_reload_time))
+                    log.trace("Updated playlist refresh time to {0:.2f}s".format(self.manifest_reload_time))
 
                 except StreamError as err:
                     log.warning("Failed to reload manifest: {0}", err)
@@ -347,13 +347,13 @@ class SegmentProcessor(Thread):
                 self.buffer.close()
                 return
 
-            log.debug("Writing {0} to output buffer".format(segment.sequence_number))
+            log.trace("Writing {0} to output buffer".format(segment.sequence_number))
             while not self.closed:
                 # copy from the segment buffer to the output buffer
                 try:
                     for chunk in buffer.read_iter(16 * 1024):
                         self.write(chunk)
-                    log.debug("Segment {0} written to output buffer".format(segment.sequence_number))
+                    log.trace("Segment {0} written to output buffer".format(segment.sequence_number))
                     break
                 except IOError:
                     try:
@@ -383,7 +383,7 @@ class SegmentProcessor(Thread):
                 try:
                     future = self.fetch_executor.submit(self.fetcher, segment, buffer)
                     self.put((segment, buffer, future))
-                    log.debug("Queued segment #{}...".format(segment.sequence_number))
+                    log.trace("Queued segment #{}...".format(segment.sequence_number))
                 except RuntimeError:
                     return
 
@@ -494,7 +494,7 @@ class HTTPSegmentProcessor(SegmentProcessor):
         :yield: data and segment number
         """
 
-        log.debug("Starting fetch of #{} : {} (range: {}-{})".format(segment.sequence_number, shorten(segment.uri, width=70),
+        log.trace("Starting fetch of #{} : {} (range: {}-{})".format(segment.sequence_number, shorten(segment.uri, width=70),
                                                                      segment.range[0], segment.range[1] or ""))
 
         retries = self.retries
@@ -530,7 +530,7 @@ class HTTPSegmentProcessor(SegmentProcessor):
                     size = sizeof_fmt(int(streamer.headers.get("Content-Length")))
                 else:
                     size = "unknown size"
-                log.debug("Starting download of segment {0} ({1})".format(segment.sequence_number, size))
+                log.trace("Starting download of segment {0} ({1})".format(segment.sequence_number, size))
                 t = time.time()
                 for chunk in streamer.iter_content(chunk_size=chunk_size):
                     if self.closed:  # stop downloading the segment if interrupted
@@ -541,7 +541,7 @@ class HTTPSegmentProcessor(SegmentProcessor):
                         yield chunk
                     offset += len(chunk)  # update the offset
                     # TODO: for non-partial stop at the right place
-                log.debug("Completed download of segment {0} in {1:.1f}s".format(segment.sequence_number, time.time() - t))
+                log.trace("Completed download of segment {0} in {1:.1f}s".format(segment.sequence_number, time.time() - t))
                 return  # completed successfully
             except Exception as err:
                 # failed, need to retry build maintain the current offset

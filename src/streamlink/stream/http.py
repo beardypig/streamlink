@@ -113,10 +113,13 @@ class HTTPStream(Stream):
                                 **valid_args(self.args)).prepare().url
 
     def open(self):
-        generator = RangeHTTPSegmentGenerator(self.session.http, **self.args)
+        generator = self.create_segment_generator(self.session.http, **self.args)
         buffer = RingBuffer(self.session.get_option("ringbuffer-size"))
         proc = HTTPSegmentProcessor(self.session.http, generator, buffer)
         return proc.open()
 
     def to_url(self):
         return self.url
+
+    def create_segment_generator(self, *args, **kwargs):
+        return RangeHTTPSegmentGenerator(self, *args, **kwargs)

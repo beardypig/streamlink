@@ -211,10 +211,6 @@ class TwitchHLSStream(HLSStream):
         proc = HTTPSegmentProcessor(self.session.http, generator, buffer)
         return proc.open()
 
-    @classmethod
-    def _get_variant_playlist(cls, res):
-        return load_hls_playlist(res.text, base_uri=res.url)
-
 
 class UsherService(object):
     def __init__(self, session):

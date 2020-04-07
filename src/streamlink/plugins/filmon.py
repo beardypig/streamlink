@@ -92,26 +92,9 @@ class FilmOnHLS(HLSStream):
             raise TypeError("Stream has expired and cannot be converted to a URL")
         return url
 
-    def open(self):
-        live_edge = self.session.get_option("hls-live-edge")
-        reload_retries = self.session.get_option("hls-playlist-reload-attempts")
-        duration_offset_start = int(self.start_offset + (self.session.get_option("hls-start-offset") or 0))
-        duration_limit = self.duration or (int(self.session.get_option("hls-duration") or 0) or None)
-        live_restart = self.force_restart or self.session.get_option("hls-live-restart")
-        ignore_names = self.session.get_option("hls-segment-ignore-names")
-
-        generator = FilmOnHLSSegmentGenerator(self.session.http,
-                                              live_edge=live_edge,
-                                              start_offset=duration_offset_start,
-                                              duration=duration_limit,
-                                              reload_attempts=reload_retries,
-                                              live_restart=live_restart,
-                                              ignore_names=ignore_names,
-                                              stream=self,
-                                              **self.args)
-        buffer = RingBuffer(self.session.get_option("ringbuffer-size"))
-        proc = HTTPSegmentProcessor(self.session.http, generator, buffer)
-        return proc.open()
+    def create_segment_generator(self, *args, **kwargs):
+        kwargs["stream"] = self
+        return FilmOnHLSSegmentGenerator(*args, **kwargs)
 
 
 class FilmOnAPI(object):
@@ -138,17 +121,16 @@ class FilmOnAPI(object):
         validate.get("data")
     )
 
-    def channel(self, channel):
-        for _ in range(5):
+    def channel(self, channel, retries=5, retry_delay=0.75):
+        for r in range(retries):
             # retry for 50X errors
             try:
                 res = self.session.http.get(self.channel_url.format(channel))
                 if res:
-                    break
+                    return self.session.http.json(res, schema=self.api_schema)
             except Exception:
-                log.debug("channel sleep {0}".format(_))
-                time.sleep(0.75)
-        return self.session.http.json(res, schema=self.api_schema)
+                log.debug("Retrying channel request: {0} ({1}/{2})".format(channel, r+1, retries))
+                time.sleep(retry_delay)
 
     def vod(self, vod_id):
         res = self.session.http.get(self.vod_url.format(vod_id))
@@ -234,7 +216,7 @@ class Filmon(Plugin):
             try:
                 data = self.api.channel(_id)
                 for stream in data["streams"]:
-                    yield stream["quality"], FilmOnHLS(self.session, channel=_id, quality=stream["quality"])
+                    yield stream["quality"], FilmOnHLS(self.session, channel=_id, quality=stream["quality"], stream=stream)
             except Exception:
                 if channel and not channel.isdigit():
                     self.cache.set(channel, None, expires=0)
