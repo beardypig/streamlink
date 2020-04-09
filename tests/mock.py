@@ -1,9 +1,12 @@
 from __future__ import absolute_import
-try:
+import sys
+
+
+if (sys.version_info.major == 3) and (sys.version_info.minor > 5):
     from unittest.mock import *
     import unittest.mock as mock
     __all__ = mock.__all__
-except ImportError:
+else:
     from mock import *
     import mock
     __all__ = mock.__all__

@@ -7,7 +7,7 @@ from functools import partial
 import pytest
 import requests_mock
 from Crypto.Cipher import AES
-from mock import patch, Mock
+from tests.mock import patch, Mock
 
 from streamlink.session import Streamlink
 from streamlink.stream import hls
