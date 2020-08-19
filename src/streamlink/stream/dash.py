@@ -193,6 +193,8 @@ class DASHStream(Stream):
             if aset.contentProtection:
                 raise PluginError("{} is protected by DRM".format(url))
             for rep in aset.representations:
+                if rep.contentProtection:
+                    raise PluginError("{} is protected by DRM".format(url))
                 if rep.mimeType.startswith("video"):
                     video.append(rep)
                 elif rep.mimeType.startswith("audio"):

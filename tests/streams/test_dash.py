@@ -20,8 +20,8 @@ class TestDASHStream(unittest.TestCase):
             Mock(adaptationSets=[
                 Mock(contentProtection=None,
                      representations=[
-                         Mock(id=1, mimeType="video/mp4", height=720),
-                         Mock(id=2, mimeType="video/mp4", height=1080)
+                         Mock(id=1, contentProtection=None, mimeType="video/mp4", height=720),
+                         Mock(id=2, contentProtection=None, mimeType="video/mp4", height=1080)
                      ])
             ])
         ])
@@ -40,8 +40,8 @@ class TestDASHStream(unittest.TestCase):
             Mock(adaptationSets=[
                 Mock(contentProtection=None,
                      representations=[
-                         Mock(id=1, mimeType="audio/mp4", bandwidth=128.0, lang='en'),
-                         Mock(id=2, mimeType="audio/mp4", bandwidth=256.0, lang='en')
+                         Mock(id=1, contentProtection=None, mimeType="audio/mp4", bandwidth=128.0, lang='en'),
+                         Mock(id=2, contentProtection=None, mimeType="audio/mp4", bandwidth=256.0, lang='en')
                      ])
             ])
         ])
@@ -60,9 +60,9 @@ class TestDASHStream(unittest.TestCase):
             Mock(adaptationSets=[
                 Mock(contentProtection=None,
                      representations=[
-                         Mock(id=1, mimeType="video/mp4", height=720),
-                         Mock(id=2, mimeType="video/mp4", height=1080),
-                         Mock(id=3, mimeType="audio/aac", bandwidth=128.0, lang='en')
+                         Mock(id=1, contentProtection=None, mimeType="video/mp4", height=720),
+                         Mock(id=2, contentProtection=None, mimeType="video/mp4", height=1080),
+                         Mock(id=3, contentProtection=None, mimeType="audio/aac", bandwidth=128.0, lang='en')
                      ])
             ])
         ])
@@ -81,10 +81,10 @@ class TestDASHStream(unittest.TestCase):
             Mock(adaptationSets=[
                 Mock(contentProtection=None,
                      representations=[
-                         Mock(id=1, mimeType="video/mp4", height=720),
-                         Mock(id=2, mimeType="video/mp4", height=1080),
-                         Mock(id=3, mimeType="audio/aac", bandwidth=128.0, lang='en'),
-                         Mock(id=4, mimeType="audio/aac", bandwidth=256.0, lang='en')
+                         Mock(id=1, contentProtection=None, mimeType="video/mp4", height=720),
+                         Mock(id=2, contentProtection=None, mimeType="video/mp4", height=1080),
+                         Mock(id=3, contentProtection=None, mimeType="audio/aac", bandwidth=128.0, lang='en'),
+                         Mock(id=4, contentProtection=None, mimeType="audio/aac", bandwidth=256.0, lang='en')
                      ])
             ])
         ])
@@ -103,10 +103,10 @@ class TestDASHStream(unittest.TestCase):
             Mock(adaptationSets=[
                 Mock(contentProtection=None,
                      representations=[
-                         Mock(id=1, mimeType="video/mp4", height=720),
-                         Mock(id=2, mimeType="video/mp4", height=1080),
-                         Mock(id=3, mimeType="audio/aac", bandwidth=128.0, lang='en'),
-                         Mock(id=4, mimeType="audio/aac", bandwidth=128.0, lang='es')
+                         Mock(id=1, contentProtection=None, mimeType="video/mp4", height=720),
+                         Mock(id=2, contentProtection=None, mimeType="video/mp4", height=1080),
+                         Mock(id=3, contentProtection=None, mimeType="audio/aac", bandwidth=128.0, lang='en'),
+                         Mock(id=4, contentProtection=None, mimeType="audio/aac", bandwidth=128.0, lang='es')
                      ])
             ])
         ])
@@ -128,10 +128,10 @@ class TestDASHStream(unittest.TestCase):
             Mock(adaptationSets=[
                 Mock(contentProtection=None,
                      representations=[
-                         Mock(id=1, mimeType="video/mp4", height=720),
-                         Mock(id=2, mimeType="video/mp4", height=1080),
-                         Mock(id=3, mimeType="audio/aac", bandwidth=128.0, lang='eng'),
-                         Mock(id=4, mimeType="audio/aac", bandwidth=128.0, lang='spa')
+                         Mock(id=1, contentProtection=None, mimeType="video/mp4", height=720),
+                         Mock(id=2, contentProtection=None, mimeType="video/mp4", height=1080),
+                         Mock(id=3, contentProtection=None, mimeType="audio/aac", bandwidth=128.0, lang='eng'),
+                         Mock(id=4, contentProtection=None, mimeType="audio/aac", bandwidth=128.0, lang='spa')
                      ])
             ])
         ])
@@ -153,9 +153,9 @@ class TestDASHStream(unittest.TestCase):
             Mock(adaptationSets=[
                 Mock(contentProtection=None,
                      representations=[
-                         Mock(id=1, mimeType="video/mp4", height=720),
-                         Mock(id=2, mimeType="video/mp4", height=1080),
-                         Mock(id=3, mimeType="audio/aac", bandwidth=128.0, lang='en_no_voice'),
+                         Mock(id=1, contentProtection=None, mimeType="video/mp4", height=720),
+                         Mock(id=2, contentProtection=None, mimeType="video/mp4", height=1080),
+                         Mock(id=3, contentProtection=None, mimeType="audio/aac", bandwidth=128.0, lang='en_no_voice'),
                      ])
             ])
         ])
@@ -180,10 +180,10 @@ class TestDASHStream(unittest.TestCase):
             Mock(adaptationSets=[
                 Mock(contentProtection=None,
                      representations=[
-                         Mock(id=1, mimeType="video/mp4", height=720),
-                         Mock(id=2, mimeType="video/mp4", height=1080),
-                         Mock(id=3, mimeType="audio/aac", bandwidth=128.0, lang='en'),
-                         Mock(id=4, mimeType="audio/aac", bandwidth=128.0, lang='es')
+                         Mock(id=1, contentProtection=None, mimeType="video/mp4", height=720),
+                         Mock(id=2, contentProtection=None, mimeType="video/mp4", height=1080),
+                         Mock(id=3, contentProtection=None, mimeType="audio/aac", bandwidth=128.0, lang='en'),
+                         Mock(id=4, contentProtection=None, mimeType="audio/aac", bandwidth=128.0, lang='es')
                      ])
             ])
         ])
@@ -202,6 +202,22 @@ class TestDASHStream(unittest.TestCase):
     @patch('streamlink.stream.dash.MPD')
     def test_parse_manifest_drm(self, mpdClass):
         mpdClass.return_value = Mock(periods=[Mock(adaptationSets=[Mock(contentProtection="DRM")])])
+
+        self.assertRaises(PluginError,
+                          DASHStream.parse_manifest,
+                          self.session, self.test_url)
+        mpdClass.assert_called_with(ANY, base_url="http://test.bar", url="http://test.bar/foo.mpd")
+
+    @patch('streamlink.stream.dash.MPD')
+    def test_parse_manifest_rep_drm(self, mpdClass):
+        mpdClass.return_value = Mock(periods=[
+            Mock(adaptationSets=[
+                Mock(contentProtection=None,
+                     representations=[
+                         Mock(contentProtection="DRM")
+                    ])
+            ])
+        ])
 
         self.assertRaises(PluginError,
                           DASHStream.parse_manifest,
