@@ -1,15 +1,13 @@
 """Plugin for Arte.tv, bi-lingual art and culture channel."""
 
 import re
-
+import logging
 from itertools import chain
 
 from streamlink.compat import urlparse
 from streamlink.plugin import Plugin
 from streamlink.plugin.api import validate
-from streamlink.stream import HDSStream
 from streamlink.stream import HLSStream
-from streamlink.stream import HTTPStream
 
 JSON_VOD_URL = "https://api.arte.tv/api/player/v1/config/{0}/{1}?platform=ARTE_NEXT"
 JSON_LIVE_URL = "https://api.arte.tv/api/player/v1/livestream/{0}"
@@ -38,6 +36,7 @@ _video_schema = validate.Schema({
         )
     }
 })
+log = logging.getLogger(__name__)
 
 
 class ArteTV(Plugin):
@@ -46,43 +45,29 @@ class ArteTV(Plugin):
         return _url_re.match(url)
 
     def _create_stream(self, stream, language):
-        stream_name = "{0}p".format(stream["height"])
         stream_type = stream["mediaType"]
         stream_url = stream["url"]
         stream_language = stream["versionShortLibelle"]
 
         if language == "de":
-            language = ["DE", "VOST-DE", "VA", "VOA", "Dt. Live", "OV", "OmU"]
+            language = ["DE", "VOST-DE", "VA", "VOA", "Dt. Live"]
         elif language == "en":
             language = ["ANG", "VOST-ANG"]
         elif language == "es":
             language = ["ESP", "VOST-ESP"]
         elif language == "fr":
-            language = ["FR", "VOST-FR", "VF", "VOF", "Frz. Live", "VO", "ST mal"]
+            language = ["FR", "VOST-FR", "VF", "VOF", "Frz. Live"]
         elif language == "pl":
             language = ["POL", "VOST-POL"]
 
         if stream_language in language:
-            if stream_type in ("hls", "mp4"):
-                if urlparse(stream_url).path.endswith("m3u8"):
-                    try:
-                        streams = HLSStream.parse_variant_playlist(self.session, stream_url)
-
-                        for stream in streams.items():
-                            yield stream
-                    except IOError as err:
-                        self.logger.error("Failed to extract HLS streams: {0}", err)
-                else:
-                    yield stream_name, HTTPStream(self.session, stream_url)
-
-            elif stream_type == "f4m":
+            if stream_type == "hls" and urlparse(stream_url).path.endswith("m3u8"):
                 try:
-                    streams = HDSStream.parse_manifest(self.session, stream_url)
-
-                    for stream in streams.items():
-                        yield stream
+                    streams = HLSStream.parse_variant_playlist(self.session, stream_url)
+                    for name, stream in streams.items():
+                        yield name, stream
                 except IOError as err:
-                    self.logger.error("Failed to extract HDS streams: {0}", err)
+                    log.error("Failed to extract HLS streams: {0}", err)
 
     def _get_streams(self):
         match = _url_re.match(self.url)
