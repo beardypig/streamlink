@@ -95,6 +95,8 @@ class Streamlink(object):
         if options:
             self.options.update(options)
         self.plugins = OrderedDict({})
+        self._plugins_overrides = set([])
+        self._plugins_path = {}
         self.load_builtin_plugins()
         self._logger = None
 
@@ -500,7 +502,9 @@ class Streamlink(object):
 
             if plugin.module in self.plugins:
                 log.debug("Plugin {0} is being overridden by {1}".format(plugin.module, pathname))
+                self._plugins_overrides.add(plugin.module)
 
+            self._plugins_path[plugin.module] = pathname
             self.plugins[plugin.module] = plugin
 
         if file:
@@ -513,6 +517,12 @@ class Streamlink(object):
     @property
     def localization(self):
         return Localization(self.get_option("locale"))
+
+    def is_plugin_overridden(self, name):
+        return name in self._plugins_overrides
+
+    def get_plugin_path(self, name):
+        return self._plugins_path.get(name)
 
 
 __all__ = ["Streamlink"]

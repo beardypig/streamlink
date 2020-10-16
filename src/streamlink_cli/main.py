@@ -558,6 +558,8 @@ def handle_url():
         setup_plugin_options(streamlink, plugin)
         log.info("Found matching plugin {0} for URL {1}".format(
                  plugin.module, args.url))
+        if streamlink.is_plugin_overriden(plugin.module):
+            log.info("Plugin {0} was side loaded from {1}".format(plugin.module, streamlink.plugin_path(plugin.module)))
 
         plugin_args = []
         for parg in plugin.arguments:
