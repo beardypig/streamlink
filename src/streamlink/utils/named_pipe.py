@@ -3,9 +3,8 @@ import tempfile
 
 from ..compat import is_win32
 
-
 if is_win32:
-    from ctypes import windll, cast, c_ulong, c_void_p, byref
+    from ctypes import byref, c_ulong, c_void_p, cast, windll
 
     PIPE_ACCESS_OUTBOUND = 0x00000002
     PIPE_TYPE_BYTE = 0x00000000

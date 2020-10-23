@@ -1,9 +1,9 @@
 #!/usr/bin/env python
 import argparse
 import logging
+import re
 from os import getenv, path
 from pprint import pformat
-import re
 from sys import exit
 
 import requests

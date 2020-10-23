@@ -1,6 +1,6 @@
-from .compat import bytes, is_py2, string_types
-
 import struct
+
+from .compat import bytes, is_py2, string_types
 
 
 def byte(ordinal):

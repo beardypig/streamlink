@@ -1,10 +1,10 @@
-from .compat import OrderedDict, is_py2, str, bytes, integer_types, string_types
-from .util import pack_bytes_into
-
-from collections import namedtuple
-from struct import Struct, error as struct_error
 import inspect
+from collections import namedtuple
+from struct import Struct
+from struct import error as struct_error
 
+from .compat import OrderedDict, bytes, integer_types, is_py2, str, string_types
+from .util import pack_bytes_into
 
 getargspec = getattr(inspect, "getfullargspec", inspect.getargspec)
 

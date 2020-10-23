@@ -5,20 +5,10 @@ import unittest
 import xml.etree.ElementTree as ET
 
 from streamlink.exceptions import PluginError
-from streamlink.plugin.api.validate import xml_element, text
 from streamlink.plugin.api import validate
-from streamlink.utils import (
-    absolute_url,
-    load_module,
-    parse_json,
-    parse_qsd,
-    parse_xml,
-    prepend_www,
-    rtmpparse,
-    search_dict,
-    swfdecompress,
-    verifyjson,
-)
+from streamlink.plugin.api.validate import text, xml_element
+from streamlink.utils import (absolute_url, load_module, parse_json, parse_qsd, parse_xml, prepend_www, rtmpparse, search_dict,
+                              swfdecompress, verifyjson)
 
 # used in the import test to verify that this module was imported
 __test_marker__ = "test_marker"

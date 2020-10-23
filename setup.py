@@ -1,12 +1,12 @@
 #!/usr/bin/env python
 import codecs
 from os import environ, path
-from sys import argv, path as sys_path
+from sys import argv
+from sys import path as sys_path
 
-from setuptools import setup, find_packages
+from setuptools import find_packages, setup
 
 import versioneer
-
 
 deps = [
     "requests>=2.21.0,<3.0",

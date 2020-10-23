@@ -1,8 +1,7 @@
 import logging
 from threading import Event
 
-from .hls import HLSStreamWriter, HLSStreamReader
-
+from .hls import HLSStreamReader, HLSStreamWriter
 
 log = logging.getLogger(__name__)
 

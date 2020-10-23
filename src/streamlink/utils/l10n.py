@@ -2,14 +2,13 @@ import locale
 import logging
 import re
 
-
 try:
     from iso639 import languages
     from iso3166 import countries
 
     PYCOUNTRY = False
 except ImportError:  # pragma: no cover
-    from pycountry import languages, countries
+    from pycountry import countries, languages
 
     PYCOUNTRY = True
 

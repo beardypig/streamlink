@@ -12,7 +12,6 @@ Inspired by sphinxcontrib.autoprogram but with a few differences:
 
 import argparse
 import re
-
 from collections import namedtuple
 from textwrap import dedent
 
@@ -21,7 +20,6 @@ from docutils.parsers.rst import Directive
 from docutils.parsers.rst.directives import unchanged
 from docutils.statemachine import ViewList
 from sphinx.util.nodes import nested_parse_with_titles
-
 
 _ArgumentParser = argparse.ArgumentParser
 _Argument = namedtuple("Argument", ["args", "options"])

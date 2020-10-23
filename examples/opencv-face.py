@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 import logging
-import sys
-import streamlink
 import os.path
+import sys
+
+import streamlink
 
 try:
     import cv2

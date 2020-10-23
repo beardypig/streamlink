@@ -2,7 +2,7 @@ import json
 import os
 import shutil
 import tempfile
-from time import time, mktime
+from time import mktime, time
 
 from .compat import is_win32
 

@@ -9,7 +9,7 @@ except ImportError:
     from dummy_thread import get_ident as _get_ident
 
 try:
-    from _abcoll import KeysView, ValuesView, ItemsView
+    from _abcoll import ItemsView, KeysView, ValuesView
 except ImportError:
     pass
 

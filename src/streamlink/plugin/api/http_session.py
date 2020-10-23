@@ -1,5 +1,7 @@
 import time
-from requests import Session, __build__ as requests_version
+
+from requests import Session
+from requests import __build__ as requests_version
 from requests.adapters import HTTPAdapter
 
 from streamlink.packages.requests_file import FileAdapter

@@ -2,19 +2,17 @@ import base64
 import hashlib
 import hmac
 import io
+import logging
 import random
 from urllib.parse import urlparse
 
-from .stream import Stream
-from .wrappers import StreamIOThreadWrapper, StreamIOIterWrapper
-
 from ..buffers import Buffer
 from ..exceptions import StreamError
-from ..utils import swfdecompress
-
 from ..packages.flashmedia import FLV, FLVError
 from ..packages.flashmedia.tag import ScriptData
-import logging
+from ..utils import swfdecompress
+from .stream import Stream
+from .wrappers import StreamIOIterWrapper, StreamIOThreadWrapper
 
 log = logging.getLogger(__name__)
 

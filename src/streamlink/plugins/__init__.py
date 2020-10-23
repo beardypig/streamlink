@@ -4,5 +4,5 @@
     compatibility.
 """
 
-from ..exceptions import PluginError, NoStreamsError, NoPluginError
+from ..exceptions import NoPluginError, NoStreamsError, PluginError
 from ..plugin import Plugin

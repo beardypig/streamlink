@@ -6,15 +6,9 @@ from threading import Thread
 
 from ..buffers import RingBuffer
 from ..packages.flashmedia import FLVError
-from ..packages.flashmedia.tag import (AudioData, AACAudioData, VideoData,
-                                       AVCVideoData, VideoCommandFrame,
-                                       Header, ScriptData, Tag)
-from ..packages.flashmedia.tag import (AAC_PACKET_TYPE_SEQUENCE_HEADER,
-                                       AVC_PACKET_TYPE_SEQUENCE_HEADER,
-                                       AUDIO_CODEC_ID_AAC,
-                                       VIDEO_CODEC_ID_AVC,
-                                       TAG_TYPE_AUDIO,
-                                       TAG_TYPE_VIDEO)
+from ..packages.flashmedia.tag import (AAC_PACKET_TYPE_SEQUENCE_HEADER, AUDIO_CODEC_ID_AAC, AVC_PACKET_TYPE_SEQUENCE_HEADER,
+                                       TAG_TYPE_AUDIO, TAG_TYPE_VIDEO, VIDEO_CODEC_ID_AVC, AACAudioData, AudioData,
+                                       AVCVideoData, Header, ScriptData, Tag, VideoCommandFrame, VideoData)
 
 __all__ = ["extract_flv_header_tags", "FLVTagConcat", "FLVTagConcatIO"]
 log = logging.getLogger(__name__)

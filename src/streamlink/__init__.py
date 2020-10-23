@@ -9,6 +9,7 @@ Full documentation is available at https://streamlink.github.io.
 
 """
 from ._version import get_versions
+
 __version__ = get_versions()['version']
 del get_versions
 __title__ = "streamlink"
@@ -18,6 +19,5 @@ __copyright__ = "Copyright 2020 Streamlink"
 __credits__ = ["https://github.com/streamlink/streamlink/blob/master/AUTHORS"]
 
 from .api import streams
-from .exceptions import (StreamlinkError, PluginError, NoStreamsError,
-                         NoPluginError, StreamError)
+from .exceptions import NoPluginError, NoStreamsError, PluginError, StreamError, StreamlinkError
 from .session import Streamlink

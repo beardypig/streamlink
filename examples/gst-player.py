@@ -5,9 +5,10 @@ from __future__ import print_function
 import sys
 
 import gi
+from gi.repository import GObject as gobject
+from gi.repository import Gst as gst
 
-from gi.repository import GObject as gobject, Gst as gst
-from streamlink import Streamlink, StreamError, PluginError, NoPluginError
+from streamlink import NoPluginError, PluginError, StreamError, Streamlink
 
 
 def exit(msg):

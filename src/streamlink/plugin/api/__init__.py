@@ -1,5 +1,4 @@
 import sys
-
 from types import ModuleType as module
 
 from .http_session import HTTPSession

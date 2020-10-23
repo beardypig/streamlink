@@ -2,7 +2,9 @@
 import re
 from collections import namedtuple
 
-from ...utils import parse_qsd as parse_query, parse_json, parse_xml
+from ...utils import parse_json
+from ...utils import parse_qsd as parse_query
+from ...utils import parse_xml
 
 __all__ = ["parse_json", "parse_xml", "parse_query"]
 

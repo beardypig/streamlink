@@ -1,5 +1,5 @@
-from .error import FLVError
 from .compat import is_py2
+from .error import FLVError
 from .tag import Header, Tag
 
 

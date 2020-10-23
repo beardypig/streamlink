@@ -1,4 +1,4 @@
-from .error import *
 from .amf import *
-from .flv import *
+from .error import *
 from .f4v import *
+from .flv import *

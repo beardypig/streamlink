@@ -1,7 +1,8 @@
+import logging
+
+from ..exceptions import StreamError
 from .flvconcat import FLVTagConcatIO
 from .stream import Stream
-from ..exceptions import StreamError
-import logging
 
 __all__ = ["Playlist", "FLVPlaylist"]
 log = logging.getLogger(__name__)

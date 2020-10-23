@@ -1,6 +1,6 @@
 from .error import AMFError
 from .packet import Packet
-from .types import AMF0String, AMF0Value, U8, U16BE, U32BE
+from .types import U8, U16BE, U32BE, AMF0String, AMF0Value
 
 
 class AMFHeader(Packet):

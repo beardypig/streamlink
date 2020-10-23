@@ -1,11 +1,10 @@
-import logging
 import base64
 import hmac
+import logging
+import os.path
 import random
 import re
-import os.path
 import string
-
 from binascii import unhexlify
 from collections import namedtuple
 from copy import deepcopy
@@ -14,20 +13,16 @@ from io import BytesIO
 from math import ceil
 from urllib.parse import parse_qsl, urljoin, urlparse, urlunparse
 
-from .flvconcat import FLVTagConcat
-from .segmented import (SegmentedStreamReader,
-                        SegmentedStreamWriter,
-                        SegmentedStreamWorker)
-from .stream import Stream
-from .wrappers import StreamIOIterWrapper
-
 from ..cache import Cache
-from ..exceptions import StreamError, PluginError
-from ..utils import absolute_url, swfdecompress
-
+from ..exceptions import PluginError, StreamError
 from ..packages.flashmedia import F4V, F4VError
 from ..packages.flashmedia.box import Box
-from ..packages.flashmedia.tag import ScriptData, Tag, TAG_TYPE_SCRIPT
+from ..packages.flashmedia.tag import TAG_TYPE_SCRIPT, ScriptData, Tag
+from ..utils import absolute_url, swfdecompress
+from .flvconcat import FLVTagConcat
+from .segmented import SegmentedStreamReader, SegmentedStreamWorker, SegmentedStreamWriter
+from .stream import Stream
+from .wrappers import StreamIOIterWrapper
 
 log = logging.getLogger(__name__)
 # Akamai HD player verification key

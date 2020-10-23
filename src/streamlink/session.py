@@ -3,15 +3,15 @@ import logging
 import pkgutil
 import sys
 import traceback
+from collections import OrderedDict
 
 import requests
 
-from collections import OrderedDict
-
 from streamlink.logger import StreamlinkLogger
-from streamlink.utils import update_scheme, memoize
+from streamlink.utils import memoize, update_scheme
 from streamlink.utils.l10n import Localization
-from . import plugins, __version__
+
+from . import __version__, plugins
 from .compat import is_win32
 from .exceptions import NoPluginError, PluginError
 from .options import Options
