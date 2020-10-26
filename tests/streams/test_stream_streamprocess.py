@@ -1,10 +1,9 @@
 import unittest
-from unittest.mock import patch, PropertyMock
+from unittest.mock import PropertyMock, patch
 
 import pytest
 
-from streamlink import StreamError
-from streamlink import Streamlink
+from streamlink import StreamError, Streamlink
 from streamlink.stream import StreamProcess
 
 
